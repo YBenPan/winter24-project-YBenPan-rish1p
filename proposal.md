@@ -1,7 +1,7 @@
 ## Title of your project
 Trading Exchange + Terminal
 ## Team members
-Rishi Padmanabhan, Benjamin Pan
+Rishi Padmanabhan, Ben Pan
 
 ## Project description
 Our project is a tool for teaching kids about the stock market! We are building a stock "exchange" on one Pi that connects to a stock terminal on another.
