@@ -3,8 +3,8 @@
 # Additional source file(s) mymodule.c (edit SOURCES to change)
 # Link against your libmango + reference libmango (edit LDLIBS, LDFLAGS to change)
 
-SERVER_PROGRAM = exchange/interface.bin
-SERVER_SOURCES = exchange/interface.c
+SERVER_PROGRAM = interface.bin
+SERVER_SOURCES = interface.c
 
 server: $(SERVER_PROGRAM)
 
@@ -41,7 +41,7 @@ run: $(PROGRAM)
 
 # Remove all build products
 clean:
-	rm -f *.o *.bin *.elf *.list *~
+	rm -rf *.o *.bin *.elf *.list *~
 
 # this rule will provide better error message when
 # a source file cannot be found (missing, misnamed)
