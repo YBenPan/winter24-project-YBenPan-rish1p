@@ -3,8 +3,8 @@
 # Additional source file(s) mymodule.c (edit SOURCES to change)
 # Link against your libmango + reference libmango (edit LDLIBS, LDFLAGS to change)
 
-PROGRAM = myprogram.bin
-SOURCES = $(PROGRAM:.bin=.c) mymodule.c
+PROGRAM = interface.bin
+SOURCES = exchange/interface.c
 
 all: $(PROGRAM)
 
