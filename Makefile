@@ -3,10 +3,10 @@
 # Additional source file(s) mymodule.c (edit SOURCES to change)
 # Link against your libmango + reference libmango (edit LDLIBS, LDFLAGS to change)
 
-PROGRAM = interface.bin
-SOURCES = exchange/interface.c
+SERVER_PROGRAM = exchange/interface.bin
+SERVER_SOURCES = exchange/interface.c
 
-all: $(PROGRAM)
+server: $(SERVER_PROGRAM)
 
 # Flags for compile and link
 ARCH 	= -march=rv64im -mabi=lp64
@@ -15,7 +15,7 @@ CFLAGS 	= $(ARCH) -g -Og -I$$CS107E/include $$warn $$freestanding -fno-omit-fram
 LDFLAGS = -nostdlib -L$$CS107E/lib -T memmap.ld
 LDLIBS 	= -lmango -lmango_gcc
 
-OBJECTS = $(addsuffix .o, $(basename $(SOURCES)))
+OBJECTS = $(addsuffix .o, $(basename $(SERVER_SOURCES)))
 
 # Rules and recipes for all build steps
 
