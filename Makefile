@@ -7,6 +7,7 @@ SERVER_PROGRAM = interface.bin
 SERVER_SOURCES = interface.c
 
 server: $(SERVER_PROGRAM)
+	mango-run $<
 
 # Flags for compile and link
 ARCH 	= -march=rv64im -mabi=lp64

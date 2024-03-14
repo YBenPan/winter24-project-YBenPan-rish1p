@@ -6,6 +6,13 @@
 #include "malloc.h"
 #include "strings.h"
 #include "printf.h"
+#include "interrupts.h"
+#include "gpio.h"
+#include "timer.h"
+#include "uart.h"
+#include "hstimer.h"
+
+extern void memory_report();
 
 #define N_TIME 100
 #define N_NEWS_DISPLAY 5
@@ -98,38 +105,50 @@ static void data_init() {
 // Core graphics functions
 static void draw_news(int x, int y) {
     // x, y are in character units (not pixels)
+    printf("Drawing news...\n");
 
-    const static int N_ROWS_REQ = 9, N_COLS_REQ = 40;
+    const static int N_ROWS_REQ = 9, N_COLS_REQ = 60;
     for (int i = 0; i < min(N_NEWS_DISPLAY, news.n - news.top); i++) {
         int ind = (news.top + i) % N_NEWS_DISPLAY; 
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
         snprintf(buf, N_COLS_REQ + 1, "%02d) %s", news.top + i, news.text[ind]); 
-        int x_pix = gl_get_char_height() * (x + 1 + i), y_pix = gl_get_char_width() * y;
+        int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
+        printf("News i = %d, x_pix = %d, y_pix = %d \n", i, x_pix, y_pix);
         gl_draw_string(x_pix, y_pix, buf, news.color);
     } 
 }
 
 static void draw_ticker(int x, int y) {
     // x, y are in character units (not pixels)
+    printf("Drawing ticker...\n");
     
     const static int N_ROWS_REQ = 12, N_COLS_REQ = 12;
     for (int i = 0; i < min(N_TICKER_DISPLAY, ticker.n - ticker.top); i++) {
+        printf("Ticker i = %d\n", i);
         int ind = (ticker.top + i) % N_TICKER_DISPLAY;
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
         int close_price = ticker.stocks[ind].close_price[module.time];
         int open_price = ticker.stocks[ind].open_price[module.time];
-        int pct_change = (close_price - open_price) * 100 / open_price;
+        // TODO: change to pct_change after obtaining data + floating point
+        // int pct_change = (close_price - open_price) * 100 / open_price;
+        int pct_change = 10;
 
         snprintf(buf, N_COLS_REQ + 1, " %s  %03d%% ", ticker.stocks[ind].symbol, pct_change); 
-        int x_pix = gl_get_char_height() * (x + 1 + i), y_pix = gl_get_char_width() * y;
+        int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
+        printf("Ticker i = %d, x_pix = %d, y_pix = %d\n", i, x_pix, y_pix);
         gl_draw_string(x_pix, y_pix, buf, (pct_change >= 0 ? GL_GREEN : GL_RED));
     }
 }
 
+static void draw_graph(int x, int y) {
+    const static int N_ROWS_REQ = 13, N_COLS_REQ = 13;
+
+}
+
 static void draw_all() {
     // draw_graph(3, 12);
-    draw_ticker(3, 0);
-    draw_news(16, 0);
+    draw_ticker(0, 3);
+    draw_news(0, 16);
 }
 
 static void display() {
@@ -163,6 +182,7 @@ void interface_init(int nrows, int ncols) {
     gpio_init();
     timer_init();
     uart_init();
+    printf("Now running interface!\n");
 
     // settings
     module.bg_color = GL_BLACK;
@@ -174,10 +194,13 @@ void interface_init(int nrows, int ncols) {
 
     // display
     gl_init(ncols * gl_get_char_width(), nrows * module.line_height, GL_DOUBLEBUFFER);
+    gl_clear(module.bg_color);
     draw_all();
-    display(); 
+    display();
 
     // interrupt settings
+    hstimer_init(HSTIMER0, 10000000);
+    hstimer_enable(HSTIMER0);
     interrupts_enable_source(INTERRUPT_SOURCE_HSTIMER0);
     interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, handler_10s, NULL);
     // for 30s: track # calls mod 3 with global variable tick_10s
@@ -187,5 +210,8 @@ void interface_init(int nrows, int ncols) {
 
 void main(void) {
     interface_init(30, 80);
+    while (1) {
+    };
+    memory_report();
 }
 
