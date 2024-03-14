@@ -131,7 +131,7 @@ static void draw_ticker(int x, int y) {
         int open_price = ticker.stocks[ind].open_price[module.time];
         // TODO: change to pct_change after obtaining data + floating point
         // int pct_change = (close_price - open_price) * 100 / open_price;
-        int pct_change = 10;
+        int pct_change = close_price - open_price;
 
         snprintf(buf, N_COLS_REQ + 1, " %s  %03d%% ", ticker.stocks[ind].symbol, pct_change); 
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
@@ -140,13 +140,70 @@ static void draw_ticker(int x, int y) {
     }
 }
 
-static void draw_graph(int x, int y) {
-    const static int N_ROWS_REQ = 13, N_COLS_REQ = 13;
+static void draw_graph(int x, int y, int stock_ind) {
+    // `stock_ind` = index of stock in ticker.stocks[]
+    const static int N_ROWS_REQ = 14, N_COLS_REQ = 28;
+    // TODO: Check size fits for all components
+    const static int N_TIME_DISPLAY = 10;
+    const static int N_PRICE_INTERVALS = 12; // for room 
+    int start_time = max(0, module.time - N_TIME_DISPLAY + 1), end_time = module.time;
+    int max_interval_price = 0, min_interval_price = 100000;
+    for (int i = start_time; i <= end_time; i++) {
+        int open_price = ticker.stocks[stock_ind].open_price[i];
+        int close_price = ticker.stocks[stock_ind].close_price[i];
+        max_interval_price = max(max_interval_price, max(open_price, close_price));
+        min_interval_price = min(min_interval_price, min(open_price, close_price));
+    }
+    // calculate step size
+    int step_size, diff = max_interval_price - min_interval_price;
+    if (diff <= 10) step_size = 1;
+    else if (10 < diff && diff <= 20) step_size = 2;
+    else if (20 < diff && diff <= 40) step_size = 4;
+    else if (40 < diff && diff <= 50) step_size = 5;
+    else if (50 < diff && diff <= 100) step_size = 10;
+    else if (100 < diff && diff <= 200) step_size = 20;
+    else {
+        // TODO: Add resize mechanism for volatile stocks
+        printf("WARNING: stock too volatile (max_interval_price - min_interval_price) = %d > 200\n", diff);
+        printf("         displaying only portions of the stock graph\n");
+        step_size = 20;
+    }
 
+    // draw title
+    char buf[N_COLS_REQ + 1];
+    snprintf(buf, N_COLS_REQ + 1, "%s (%s)\n", ticker.stocks[stock_ind].name, ticker.stocks[stock_ind].symbol);
+    gl_draw_string(gl_get_char_width() * x, module.line_height * y, buf, GL_AMBER);
+
+    // draw axes
+    // TODO: Implement gl_draw_vertical_line()
+    int graph_min = min_interval_price / step_size * step_size;
+    int graph_max = graph_min + N_PRICE_INTERVALS * step_size;
+    for (int i = 0; i < N_PRICE_INTERVALS; i++) {
+        char buf[N_COLS_REQ + 1];
+        snprintf(buf, N_COLS_REQ + 1, " %03d-|", graph_max - i * step_size);    
+        int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + i);
+        gl_draw_string(x_pix, y_pix, buf, GL_WHITE);
+    }
+    char buf2[] = "--------------------"; 
+    int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + N_PRICE_INTERVALS);
+    gl_draw_string(x_pix, y_pix, buf2, GL_WHITE);
+    
+    // draw box plot
+    for (int i = 0; i <= end_time - start_time; i++) {
+        int open_price = ticker.stocks[stock_ind].open_price[i + start_time];
+        int close_price = ticker.stocks[stock_ind].close_price[i + start_time];
+        int max_price = max(open_price, close_price), min_price = min(open_price, close_price);
+        int bx = (x + 6 + i) * gl_get_char_width() + 4;
+        int by = (y + 1) * module.line_height + (graph_max - max_price) * 20 / step_size;
+        int w = 2 * (gl_get_char_width() - 4);
+        int h = (max_price - min_price) * 20 / step_size;
+        color_t color = (open_price >= close_price ? GL_GREEN : GL_RED);
+        gl_draw_rect(bx, by, w, h, color);
+    }
 }
 
 static void draw_all() {
-    // draw_graph(3, 12);
+    draw_graph(12, 0, 0);
     draw_ticker(0, 3);
     draw_news(0, 16);
 }

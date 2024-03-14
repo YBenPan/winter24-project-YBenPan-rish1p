@@ -6,8 +6,7 @@
 SERVER_PROGRAM = interface.bin
 SERVER_SOURCES = interface.c
 
-server: $(SERVER_PROGRAM)
-	mango-run $<
+all: $(SERVER_PROGRAM)
 
 # Flags for compile and link
 ARCH 	= -march=rv64im -mabi=lp64
@@ -35,6 +34,9 @@ OBJECTS = $(addsuffix .o, $(basename $(SERVER_SOURCES)))
 # Assemble asm source to object file
 %.o: %.s
 	riscv64-unknown-elf-as $(ASFLAGS) $< -o $@
+
+server: $(SERVER_PROGRAM)
+	mango-run $<
 
 # Build and run the application binary
 run: $(PROGRAM)
