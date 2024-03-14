@@ -53,16 +53,31 @@ static int min(int a, int b) {
     return a <= b ? a : b;
 }
 
-static int lprintf(char buf[], size_t max_size) {
-    // Left-aligned printf; fills empty parts with ' '
-    // TODO: Implement
-    return 0;
+// TODO: Test lprintf & rprintf
+static int lprintf(char dst[], char src[], size_t max_size) {
+    // Left-aligned printf; writes `max_size`-length string into `dst;
+    // fills with src first and then spaces
+    size_t n = strlen(src);
+    int n_spaces = max(0, (int)max_size - (int)n);
+    memcpy(dst, src, min(max_size, n));
+    for (int i = 0; i < n_spaces; i++) {
+        dst[n + i] = ' ';
+    }
+    dst[max_size] = '\0'; 
+    return max_size;
 }
 
-static int rprintf(char buf[], size_t max_size) {
-    // Right-aligned printf; fills empty parts with ' '
-    // TODO: Implement
-    return 0;
+static int rprintf(char dst[], char src[], size_t max_size) {
+    // Right-aligned printf; writes `max_size`-length string into `dst;
+    // fills with spaces first and then src
+    size_t n = strlen(src);
+    int n_spaces = max(0, (int)max_size - (int)n);
+    for (int i = 0; i < n_spaces; i++) {
+        dst[i] = ' ';
+    }
+    memcpy(dst, src, min(max_size, n));
+    dst[max_size] = '\0';
+    return max_size;
 }
 
 // Initialization functions
@@ -106,8 +121,11 @@ static void data_init() {
 static void draw_news(int x, int y) {
     // x, y are in character units (not pixels)
     printf("Drawing news...\n");
-
     const static int N_ROWS_REQ = 9, N_COLS_REQ = 60;
+    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
+        printf("Error: News out of bounds\n");
+        return;
+    }
     for (int i = 0; i < min(N_NEWS_DISPLAY, news.n - news.top); i++) {
         int ind = (news.top + i) % N_NEWS_DISPLAY; 
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
@@ -121,8 +139,12 @@ static void draw_news(int x, int y) {
 static void draw_ticker(int x, int y) {
     // x, y are in character units (not pixels)
     printf("Drawing ticker...\n");
-    
     const static int N_ROWS_REQ = 12, N_COLS_REQ = 12;
+    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
+        printf("Error: Ticker out of bounds\n");
+        return;
+    }
+    
     for (int i = 0; i < min(N_TICKER_DISPLAY, ticker.n - ticker.top); i++) {
         printf("Ticker i = %d\n", i);
         int ind = (ticker.top + i) % N_TICKER_DISPLAY;
@@ -133,17 +155,33 @@ static void draw_ticker(int x, int y) {
         // int pct_change = (close_price - open_price) * 100 / open_price;
         int pct_change = close_price - open_price;
 
-        snprintf(buf, N_COLS_REQ + 1, " %s  %03d%% ", ticker.stocks[ind].symbol, pct_change); 
+        // Print symbol and pct change separately in two strings
+        snprintf(buf, N_COLS_REQ + 1, "%s", ticker.stocks[ind].symbol); 
+        char buf1[N_COLS_REQ + 1];
+        lprintf(buf1, buf, 4);
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
         printf("Ticker i = %d, x_pix = %d, y_pix = %d\n", i, x_pix, y_pix);
+        gl_draw_string(x_pix, y_pix, buf, GL_AMBER);
+
+        buf[0] = '\0';
+        buf1[0] = '\0';
+        snprintf(buf, N_COLS_REQ + 1, "%d%%", pct_change);
+        rprintf(buf1, buf, 4);
+        x_pix = gl_get_char_width() * (x + 5);
+        y_pix = module.line_height * (y + 1 + i); 
         gl_draw_string(x_pix, y_pix, buf, (pct_change >= 0 ? GL_GREEN : GL_RED));
     }
 }
 
 static void draw_graph(int x, int y, int stock_ind) {
     // `stock_ind` = index of stock in ticker.stocks[]
+    printf("Drawing graph...\n");
     const static int N_ROWS_REQ = 14, N_COLS_REQ = 28;
-    // TODO: Check size fits for all components
+    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
+        printf("Error: graph out of bounds\n");
+        return;
+    }
+
     const static int N_TIME_DISPLAY = 10;
     const static int N_PRICE_INTERVALS = 12; // for room 
     int start_time = max(0, module.time - N_TIME_DISPLAY + 1), end_time = module.time;
@@ -154,6 +192,8 @@ static void draw_graph(int x, int y, int stock_ind) {
         max_interval_price = max(max_interval_price, max(open_price, close_price));
         min_interval_price = min(min_interval_price, min(open_price, close_price));
     }
+    printf("Max Interval Price: %d; Min Interval Price: %d\n", max_interval_price, min_interval_price);
+
     // calculate step size
     int step_size, diff = max_interval_price - min_interval_price;
     if (diff <= 10) step_size = 1;
@@ -168,27 +208,31 @@ static void draw_graph(int x, int y, int stock_ind) {
         printf("         displaying only portions of the stock graph\n");
         step_size = 20;
     }
+    printf("Step Size: %d\n", step_size);
 
     // draw title
-    char buf[N_COLS_REQ + 1];
+    char buf[N_COLS_REQ + 1], buf1[N_COLS_REQ + 1];
     snprintf(buf, N_COLS_REQ + 1, "%s (%s)\n", ticker.stocks[stock_ind].name, ticker.stocks[stock_ind].symbol);
     gl_draw_string(gl_get_char_width() * x, module.line_height * y, buf, GL_AMBER);
 
     // draw axes
     // TODO: Implement gl_draw_vertical_line()
+    printf("Drawing axes...\n");
     int graph_min = min_interval_price / step_size * step_size;
     int graph_max = graph_min + N_PRICE_INTERVALS * step_size;
     for (int i = 0; i < N_PRICE_INTERVALS; i++) {
-        char buf[N_COLS_REQ + 1];
-        snprintf(buf, N_COLS_REQ + 1, " %03d-|", graph_max - i * step_size);    
+        buf[0] = '\0'; buf1[0] = '\0';
+        snprintf(buf, N_COLS_REQ + 1, "%d-|", graph_max - i * step_size);
+        rprintf(buf1, buf, 6);
         int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + i);
-        gl_draw_string(x_pix, y_pix, buf, GL_WHITE);
+        gl_draw_string(x_pix, y_pix, buf1, GL_WHITE);
     }
-    char buf2[] = "--------------------"; 
+    char buf2[] = "+--------------------"; 
     int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + N_PRICE_INTERVALS);
     gl_draw_string(x_pix, y_pix, buf2, GL_WHITE);
     
     // draw box plot
+    printf("Drawing box plot...\n");
     for (int i = 0; i <= end_time - start_time; i++) {
         int open_price = ticker.stocks[stock_ind].open_price[i + start_time];
         int close_price = ticker.stocks[stock_ind].close_price[i + start_time];
