@@ -75,7 +75,7 @@ static int rprintf(char dst[], char src[], size_t max_size) {
     for (int i = 0; i < n_spaces; i++) {
         dst[i] = ' ';
     }
-    memcpy(dst, src, min(max_size, n));
+    memcpy(dst + n_spaces, src, min(max_size, n));
     dst[max_size] = '\0';
     return max_size;
 }
@@ -101,15 +101,21 @@ static void news_init() {
 
 static void stocks_init() {
     // TODO: Write python script to generate code that initializes stocks data
-    ticker.n = 20;
+    ticker.n = 13;
     ticker.top = 0;
     ticker.stocks[0] = (stock_t){ .name = "Microsoft Corp", .symbol = "MSFT" };
     ticker.stocks[1] = (stock_t){ .name = "Apple Inc.", .symbol = "AAPL" };
     ticker.stocks[2] = (stock_t){ .name = "NVIDIA Corp", .symbol = "NVDA" };
     ticker.stocks[3] = (stock_t){ .name = "Amazon.com, Inc.", .symbol = "AMZN" };
-    ticker.stocks[4] = (stock_t){ .name = "Alphabet Inc.", .symbol = "GOOG" };
+    ticker.stocks[4] = (stock_t){ .name = "Alphabet Inc.", .symbol = "GOOGL" };
     ticker.stocks[5] = (stock_t){ .name = "Meta Platforms, Inc.", .symbol = "META" };
     ticker.stocks[6] = (stock_t){ .name = "Berkshire Hathaway, Inc.", .symbol = "BRKB"};
+    ticker.stocks[7] = (stock_t){ .name = "Taiwan Semiconductor Manufacturing Company Limited, Inc.", .symbol = "TSM"};
+    ticker.stocks[8] = (stock_t){ .name = "Eli Lilly and Company", .symbol = "LLY"};
+    ticker.stocks[9] = (stock_t){ .name = "Novo Nordisk A/S", .symbol = "NVO"};
+    ticker.stocks[10] = (stock_t){ .name = "Visa Inc.", .symbol = "V"};
+    ticker.stocks[11] = (stock_t){ .name = "Broadcom Inc.", .symbol = "AVGO"};
+    ticker.stocks[12] = (stock_t){ .name = "JPMorgan Chase & Co.", .symbol = "JPM"};
 }
 
 static void data_init() {
@@ -121,15 +127,15 @@ static void data_init() {
 static void draw_news(int x, int y) {
     // x, y are in character units (not pixels)
     printf("Drawing news...\n");
-    const static int N_ROWS_REQ = 9, N_COLS_REQ = 60;
-    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
+    const static int N_ROWS_REQ = 9, N_COLS_REQ = 80;
+    if (x + N_COLS_REQ > module.ncols || y + N_ROWS_REQ > module.nrows) {
         printf("Error: News out of bounds\n");
         return;
     }
     for (int i = 0; i < min(N_NEWS_DISPLAY, news.n - news.top); i++) {
-        int ind = (news.top + i) % N_NEWS_DISPLAY; 
+        int ind = news.top + i;
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
-        snprintf(buf, N_COLS_REQ + 1, "%02d) %s", news.top + i, news.text[ind]); 
+        snprintf(buf, N_COLS_REQ + 1, "%02d) %s", ind + 1, news.text[ind]); 
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
         printf("News i = %d, x_pix = %d, y_pix = %d \n", i, x_pix, y_pix);
         gl_draw_string(x_pix, y_pix, buf, news.color);
@@ -147,13 +153,13 @@ static void draw_ticker(int x, int y) {
     
     for (int i = 0; i < min(N_TICKER_DISPLAY, ticker.n - ticker.top); i++) {
         printf("Ticker i = %d\n", i);
-        int ind = (ticker.top + i) % N_TICKER_DISPLAY;
+        int ind = ticker.top + i;
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
         int close_price = ticker.stocks[ind].close_price[module.time];
         int open_price = ticker.stocks[ind].open_price[module.time];
         // TODO: change to pct_change after obtaining data + floating point
         // int pct_change = (close_price - open_price) * 100 / open_price;
-        int pct_change = close_price - open_price;
+        int pct_change = 12;
 
         // Print symbol and pct change separately in two strings
         snprintf(buf, N_COLS_REQ + 1, "%s", ticker.stocks[ind].symbol); 
@@ -161,7 +167,7 @@ static void draw_ticker(int x, int y) {
         lprintf(buf1, buf, 4);
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
         printf("Ticker i = %d, x_pix = %d, y_pix = %d\n", i, x_pix, y_pix);
-        gl_draw_string(x_pix, y_pix, buf, GL_AMBER);
+        gl_draw_string(x_pix, y_pix, buf1, GL_AMBER);
 
         buf[0] = '\0';
         buf1[0] = '\0';
@@ -169,7 +175,7 @@ static void draw_ticker(int x, int y) {
         rprintf(buf1, buf, 4);
         x_pix = gl_get_char_width() * (x + 5);
         y_pix = module.line_height * (y + 1 + i); 
-        gl_draw_string(x_pix, y_pix, buf, (pct_change >= 0 ? GL_GREEN : GL_RED));
+        gl_draw_string(x_pix, y_pix, buf1, (pct_change >= 0 ? GL_GREEN : GL_RED));
     }
 }
 
@@ -247,7 +253,8 @@ static void draw_graph(int x, int y, int stock_ind) {
 }
 
 static void draw_all() {
-    draw_graph(12, 0, 0);
+    gl_clear(module.bg_color);
+    // draw_graph(12, 0, 0);
     draw_ticker(0, 3);
     draw_news(0, 16);
 }
@@ -263,11 +270,11 @@ static void handler_10s(uintptr_t pc, void *aux_data) {
         module.time++; // increases every 30 seconds, or 3 10-s ticks
     }
     ticker.top += N_TICKER_DISPLAY;
-    if (ticker.top > ticker.n) {
+    if (ticker.top >= ticker.n) {
         ticker.top = 0;
     }
     news.top += N_NEWS_DISPLAY;
-    if (news.top > news.n) {
+    if (news.top >= news.n) {
         news.top = 0;
     }
     draw_all();
@@ -295,7 +302,6 @@ void interface_init(int nrows, int ncols) {
 
     // display
     gl_init(ncols * gl_get_char_width(), nrows * module.line_height, GL_DOUBLEBUFFER);
-    gl_clear(module.bg_color);
     draw_all();
     display();
 
