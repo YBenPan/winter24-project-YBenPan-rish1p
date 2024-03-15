@@ -284,9 +284,8 @@ static void draw_ticker(int x, int y) {
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
         int close_price = ticker.stocks[ind].close_price[module.time];
         int open_price = ticker.stocks[ind].open_price[module.time];
-        // TODO: change to pct_change after obtaining data + floating point
-        // int pct_change = (close_price - open_price) * 100 / open_price;
-        int pct_change = 12;
+        // TODO: floating point
+        int pct_change = (close_price - open_price) * 100 / open_price;
 
         // Print symbol and pct change separately in two strings
         snprintf(buf, N_COLS_REQ + 1, "%s", ticker.stocks[ind].symbol); 
@@ -360,7 +359,7 @@ static void draw_graph(int x, int y, int stock_ind) {
         int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + i);
         gl_draw_string(x_pix, y_pix, buf1, GL_WHITE);
     }
-    char buf2[] = "+--------------------"; 
+    char buf2[] = "     +--------------------"; 
     int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + N_PRICE_INTERVALS);
     gl_draw_string(x_pix, y_pix, buf2, GL_WHITE);
     
@@ -370,18 +369,18 @@ static void draw_graph(int x, int y, int stock_ind) {
         int open_price = ticker.stocks[stock_ind].open_price[i + start_time];
         int close_price = ticker.stocks[stock_ind].close_price[i + start_time];
         int max_price = max(open_price, close_price), min_price = min(open_price, close_price);
-        int bx = (x + 6 + i) * gl_get_char_width() + 4;
+        int bx = (x + 6 + 2 * i) * gl_get_char_width() + 4;
         int by = (y + 1) * module.line_height + (graph_max - max_price) * 20 / step_size;
         int w = 2 * (gl_get_char_width() - 4);
         int h = (max_price - min_price) * 20 / step_size;
-        color_t color = (open_price >= close_price ? GL_GREEN : GL_RED);
+        color_t color = (open_price >= close_price ? GL_RED : GL_GREEN);
         gl_draw_rect(bx, by, w, h, color);
     }
 }
 
 static void draw_all() {
     gl_clear(module.bg_color);
-    // draw_graph(12, 0, 0);
+    draw_graph(12, 0, 0);
     draw_ticker(0, 3);
     draw_news(0, 16);
 }
@@ -391,7 +390,7 @@ static void display() {
 }
 
 // Interrupt handlers
-static void handler_10s(uintptr_t pc, void *aux_data) {
+static void hstimer0_handler(uintptr_t pc, void *aux_data) {
     module.tick_10s = (module.tick_10s + 1) % 3;
     if (module.tick_10s == 0) {
         module.time++; // increases every 30 seconds, or 3 10-s ticks
@@ -433,10 +432,10 @@ void interface_init(int nrows, int ncols) {
     display();
 
     // interrupt settings
-    hstimer_init(HSTIMER0, 10000000);
+    hstimer_init(HSTIMER0, 1000000);
     hstimer_enable(HSTIMER0);
     interrupts_enable_source(INTERRUPT_SOURCE_HSTIMER0);
-    interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, handler_10s, NULL);
+    interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, hstimer0_handler, NULL);
     // for 30s: track # calls mod 3 with global variable tick_10s
 
     interrupts_global_enable(); // everything fully initialized, now turn on interrupts
@@ -444,7 +443,7 @@ void interface_init(int nrows, int ncols) {
 
 void main(void) {
     interface_init(30, 80);
-    while (1) {
+    while (module.time < 100) {
     };
     memory_report();
 }
