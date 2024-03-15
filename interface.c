@@ -33,6 +33,10 @@ typedef struct stock {
     int open_price[N_TIME], close_price[N_TIME];
 } stock_t;
 
+typedef struct date {
+    const char *str[N_TIME];
+} date_t;
+
 static struct {
     int n, top;
     stock_t stocks[MAX_STOCKS];
@@ -43,6 +47,8 @@ static struct {
     color_t color;
     const char *text[MAX_NEWS];
 } news; 
+
+static date_t dates;
 
 // Helper functions
 static int max(int a, int b) {
@@ -245,12 +251,24 @@ static void stocks_init() {
 
 }
 
+static void dates_init() {
+    dates = (date_t){.str = {"Dec 2015","Jan 2016","Feb 2016","Mar 2016","Apr 2016","May 2016","Jun 2016","Jul 2016","Aug 2016","Sep 2016","Oct 2016","Nov 2016","Dec 2016","Jan 2017","Feb 2017","Mar 2017","Apr 2017","May 2017","Jun 2017","Jul 2017","Aug 2017","Sep 2017","Oct 2017","Nov 2017","Dec 2017","Jan 2018","Feb 2018","Mar 2018","Apr 2018","May 2018","Jun 2018","Jul 2018","Aug 2018","Sep 2018","Oct 2018","Nov 2018","Dec 2018","Jan 2019","Feb 2019","Mar 2019","Apr 2019","May 2019","Jun 2019","Jul 2019","Aug 2019","Sep 2019","Oct 2019","Nov 2019","Dec 2019","Jan 2020","Feb 2020","Mar 2020","Apr 2020","May 2020","Jun 2020","Jul 2020","Aug 2020","Sep 2020","Oct 2020","Nov 2020","Dec 2020","Jan 2021","Feb 2021","Mar 2021","Apr 2021","May 2021","Jun 2021","Jul 2021","Aug 2021","Sep 2021","Oct 2021","Nov 2021","Dec 2021","Jan 2022","Feb 2022","Mar 2022","Apr 2022","May 2022","Jun 2022","Jul 2022","Aug 2022","Sep 2022","Oct 2022","Nov 2022","Dec 2022","Jan 2023","Feb 2023","Mar 2023","Apr 2023","May 2023","Jun 2023","Jul 2023","Aug 2023","Sep 2023","Oct 2023","Nov 2023","Dec 2023","Jan 2024","Feb 2024","Mar 2024"}};
+}
+
 static void data_init() {
     news_init();
     stocks_init();
+    dates_init();
 }
 
 // Core graphics functions
+static void draw_date(int x, int y) {
+    const static int N_ROWS_REQ = 1, N_COLS_REQ = 8;
+    char buf[N_COLS_REQ + 1];
+    snprintf(buf, N_COLS_REQ + 1, "%s", dates.str[module.time]);
+    gl_draw_string(gl_get_char_width() * x, module.line_height * y, buf, GL_AMBER);
+}
+
 static void draw_news(int x, int y) {
     // x, y are in character units (not pixels)
     printf("Drawing news...\n");
@@ -272,7 +290,7 @@ static void draw_news(int x, int y) {
 static void draw_ticker(int x, int y) {
     // x, y are in character units (not pixels)
     printf("Drawing ticker...\n");
-    const static int N_ROWS_REQ = 12, N_COLS_REQ = 12;
+    const static int N_ROWS_REQ = 13, N_COLS_REQ = 12;
     if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
         printf("Error: Ticker out of bounds\n");
         return;
@@ -290,7 +308,7 @@ static void draw_ticker(int x, int y) {
         // Print symbol and pct change separately in two strings
         snprintf(buf, N_COLS_REQ + 1, "%s", ticker.stocks[ind].symbol); 
         char buf1[N_COLS_REQ + 1];
-        lprintf(buf1, buf, 4);
+        lprintf(buf1, buf, 6);
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
         printf("Ticker i = %d, x_pix = %d, y_pix = %d\n", i, x_pix, y_pix);
         gl_draw_string(x_pix, y_pix, buf1, GL_AMBER);
@@ -380,6 +398,7 @@ static void draw_graph(int x, int y, int stock_ind) {
 
 static void draw_all() {
     gl_clear(module.bg_color);
+    draw_date(0, 0);
     draw_graph(12, 0, 0);
     draw_ticker(0, 3);
     draw_news(0, 16);
