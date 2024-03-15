@@ -271,7 +271,6 @@ static void draw_date(int x, int y) {
 
 static void draw_news(int x, int y) {
     // x, y are in character units (not pixels)
-    printf("Drawing news...\n");
     const static int N_ROWS_REQ = 9, N_COLS_REQ = 80;
     if (x + N_COLS_REQ > module.ncols || y + N_ROWS_REQ > module.nrows) {
         printf("Error: News out of bounds\n");
@@ -282,14 +281,12 @@ static void draw_news(int x, int y) {
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
         snprintf(buf, N_COLS_REQ + 1, "%02d) %s", ind + 1, news.text[ind]); 
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
-        printf("News i = %d, x_pix = %d, y_pix = %d \n", i, x_pix, y_pix);
         gl_draw_string(x_pix, y_pix, buf, news.color);
     } 
 }
 
 static void draw_ticker(int x, int y) {
     // x, y are in character units (not pixels)
-    printf("Drawing ticker...\n");
     const static int N_ROWS_REQ = 13, N_COLS_REQ = 12;
     if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
         printf("Error: Ticker out of bounds\n");
@@ -297,7 +294,6 @@ static void draw_ticker(int x, int y) {
     }
     
     for (int i = 0; i < min(N_TICKER_DISPLAY, ticker.n - ticker.top); i++) {
-        printf("Ticker i = %d\n", i);
         int ind = ticker.top + i;
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
         int close_price = ticker.stocks[ind].close_price[module.time];
@@ -310,7 +306,6 @@ static void draw_ticker(int x, int y) {
         char buf1[N_COLS_REQ + 1];
         lprintf(buf1, buf, 6);
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
-        printf("Ticker i = %d, x_pix = %d, y_pix = %d\n", i, x_pix, y_pix);
         gl_draw_string(x_pix, y_pix, buf1, GL_AMBER);
 
         buf[0] = '\0';
@@ -325,7 +320,6 @@ static void draw_ticker(int x, int y) {
 
 static void draw_graph(int x, int y, int stock_ind) {
     // `stock_ind` = index of stock in ticker.stocks[]
-    printf("Drawing graph...\n");
     const static int N_ROWS_REQ = 14, N_COLS_REQ = 28;
     if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
         printf("Error: graph out of bounds\n");
@@ -342,7 +336,6 @@ static void draw_graph(int x, int y, int stock_ind) {
         max_interval_price = max(max_interval_price, max(open_price, close_price));
         min_interval_price = min(min_interval_price, min(open_price, close_price));
     }
-    printf("Max Interval Price: %d; Min Interval Price: %d\n", max_interval_price, min_interval_price);
 
     // calculate step size
     int step_size, diff = max_interval_price - min_interval_price;
@@ -358,7 +351,6 @@ static void draw_graph(int x, int y, int stock_ind) {
         printf("         displaying only portions of the stock graph\n");
         step_size = 20;
     }
-    printf("Step Size: %d\n", step_size);
 
     // draw title
     char buf[N_COLS_REQ + 1], buf1[N_COLS_REQ + 1];
@@ -367,7 +359,6 @@ static void draw_graph(int x, int y, int stock_ind) {
 
     // draw axes
     // TODO: Implement gl_draw_vertical_line()
-    printf("Drawing axes...\n");
     int graph_min = min_interval_price / step_size * step_size;
     int graph_max = graph_min + N_PRICE_INTERVALS * step_size;
     for (int i = 0; i < N_PRICE_INTERVALS; i++) {
@@ -382,7 +373,6 @@ static void draw_graph(int x, int y, int stock_ind) {
     gl_draw_string(x_pix, y_pix, buf2, GL_WHITE);
     
     // draw box plot
-    printf("Drawing box plot...\n");
     for (int i = 0; i <= end_time - start_time; i++) {
         int open_price = ticker.stocks[stock_ind].open_price[i + start_time];
         int close_price = ticker.stocks[stock_ind].close_price[i + start_time];
@@ -399,7 +389,7 @@ static void draw_graph(int x, int y, int stock_ind) {
 static void draw_all() {
     gl_clear(module.bg_color);
     draw_date(0, 0);
-    draw_graph(12, 0, 0);
+    draw_graph(12, 0, 2);
     draw_ticker(0, 3);
     draw_news(0, 16);
 }
@@ -413,6 +403,14 @@ static void hstimer0_handler(uintptr_t pc, void *aux_data) {
     module.tick_10s = (module.tick_10s + 1) % 3;
     if (module.tick_10s == 0) {
         module.time++; // increases every 30 seconds, or 3 10-s ticks
+        if (module.time == 100) {
+            hstimer_interrupt_clear(HSTIMER0);
+            hstimer_disable(HSTIMER0);
+            interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, NULL, NULL);
+            interrupts_disable_source(INTERRUPT_SOURCE_HSTIMER0);
+            memory_report();
+            return;
+        }
     }
     ticker.top += N_TICKER_DISPLAY;
     if (ticker.top >= ticker.n) {
@@ -462,8 +460,7 @@ void interface_init(int nrows, int ncols) {
 
 void main(void) {
     interface_init(30, 80);
-    while (module.time < 100) {
-    };
-    memory_report();
+    while (1) {
+    }
 }
 
