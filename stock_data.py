@@ -39,3 +39,20 @@ for i, (symbol, symbol_name) in enumerate(zip(symbols, symbol_names)):
     f.write(cmd)
 f.close()
 
+# Generate News
+news_ind = 22;
+headlines = [
+    "Amazon receives 238 proposals for its second headquarters",
+    "Kobe Steel faked product data for over 10 years, sending shockwaves",
+    "Alphabet's Google uncovers Russia-backed ads on YouTube, Gmail",
+    "Tesla fires hundreds of workers as company struggles with production",
+    "Airbus to acquire majority stake in Bombardier C Series program",
+    "AT&T's $85 billion acquisition of Time Warner hit with lawsuit",
+    "CVS Health to acquire health insurer Aetna for $69 billion",
+    "Intel products hit with security flaw in widespread 'KRACK' attack",
+    "Bitcoin soars above $6,000, doubling in price in less than a month",
+    "Disney extends buyout negotiations after hitting a 'slew of issues'"
+]
+for i in range(10):
+    cmd = f'    news[{news_ind}][{i}] = "{headlines[i]}";'
+    print(cmd)
