@@ -45,7 +45,7 @@ static struct {
 static struct {
     int n, top;
     color_t color;
-    const char *text[MAX_NEWS];
+    const char *text[N_TIME][MAX_NEWS];
 } news; 
 
 static date_t dates;
@@ -93,20 +93,230 @@ static void news_init() {
     news.n = 10; // at most MAX_NEWS
     news.color = GL_AMBER;
     news.top = 0;
-    news.text[0] = "Citadel LLC becomes the world's largest hedge fund.";
-    news.text[1] = "Donald Trump is elected as the President of the United States.";
-    news.text[2] = "Archduke Franz Ferdinand is assassinated in Sarajevo.";
-    news.text[3] = "President Johnson will not run for a second term.";
-    news.text[4] = "President Nixon decouples the U.S. Dollar from gold";
-    news.text[5] = "Russia defaults on its foreign debt obligations";
-    news.text[6] = "President Reagan announces the first tax cuts";
-    news.text[7] = "Apple CEO Steve Jobs has passed away due to pancreatic cancer";
-    news.text[8] = "Amazon founder Jeff Bezos steps down from CEO position";
-    news.text[9] = "OpenAI CEO Sam Altman is fired";
+
+    // May 2016
+    news[5][0] = "Oil prices surge as Goldman Sachs forecasts supply deficit";
+    news[5][1] = "Microsoft agrees to buy LinkedIn for $26.2 billion";
+    news[5][2] = "Verizon strikes $4.8 billion deal to acquire Yahoo's core business";
+    news[5][3] = "Bayer offers $62 billion to acquire Monsanto in agrochemical mega-merger";
+    news[5][4] = "Britain's pound hits lowest level since 1985 as Brexit fears mount";
+    news[5][5] = "Gawker files for bankruptcy after losing Hulk Hogan privacy case";
+    news[5][6] = "Regulators hit five global banks with $5.7 billion in fines";
+    news[5][7] = "Alibaba reports booming revenue growth, but profit disappoints";
+    news[5][8] = "Tesla aims to make history with release of affordable Model 3";
+    news[5][9] = "Puerto Rico missses debt payment, deepening financial crisis";
+    
+    // Jun 2016
+    news[6][0] = "Brexit vote shocks global markets, British pound plunges";
+    news[6][1] = "Volkswagen to pay $15 billion settlement in emissions scandal";
+    news[6][2] = "Walmart to acquire online retailer Jet.com for $3 billion";
+    news[6][3] = "Tesla and SolarCity agree to $2.6 billion merger";
+    news[6][4] = "Microsoft to buy LinkedIn for $26.2 billion in largest deal";
+    news[6][5] = "Airbnb raises $1 billion in funding, valued at $30 billion";
+    news[6][6] = "Verizon to acquire Yahoo's core business for $4.8 billion";
+    news[6][7] = "Uber raises $3.5 billion from Saudi investment fund";
+    news[6][8] = "Amazon to open more bookstores after opening first location";
+    news[6][9] = "Takata recalls 35 million more airbags in largest auto recall";
+
+    // Jul 2016
+    news[7][0] = "Brexit turmoil deepens as PM David Cameron resigns";
+    news[7][1] = "Verizon agrees to buy Yahoo's core business for $4.83 billion";
+    news[7][2] = "Tesla unveils 'master plan' for self-driving cars and trucks";
+    news[7][3] = "Anheuser-Busch InBev raises offer for SABMiller to $104 billion";
+    news[7][4] = "Microsoft's cloud business boosts revenue amid PC slump";
+    news[7][5] = "China's economic growth slows to 6.7%, weakest since 2009";
+    news[7][6] = "Airbnb faces growing backlash from regulators over rentals";
+    news[7][7] = "Volkswagen agrees to $14.7 billion settlement in emissions scandal";
+    news[7][8] = "Amazon unveils Prime Air, a future drone delivery service";
+    news[7][9] = "Uber loses $1.27 billion in first half of 2016 amid expansion";
+
+    // Aug 2016
+    news[8][0] = "Apple issues $7 billion bond to fund share buybacks, dividends";
+    news[8][1] = "Pfizer to buy cancer drug maker Medivation for $14 billion";
+    news[8][2] = "Uber loses $1.27 billion in first half amid expansion";
+    news[8][3] = "Mylan's EpiPen pricing raises allegations of price gouging";
+    news[8][4] = "Walmart to acquire e-commerce startup Jet.com for $3 billion";
+    news[8][5] = "Oil prices rebound as Saudi Arabia and Russia agree output freeze";
+    news[8][6] = "Apple hit with $14.5 billion tax bill from European Commission";
+    news[8][7] = "Mondelez calls off $23 billion bid for Hershey after rejection";
+    news[8][8] = "WhatsApp to start sharing user data with Facebook after policy change";
+    news[8][9] = "EpiPen maker Mylan to launch generic version amid pricing backlash";    
+
+    // Sep 2016
+    news[9][0] = "Wells Fargo fined $185 million for widespread illegal practices";
+    news[9][1] = "Pfizer decides against splitting into two companies";
+    news[9][2] = "Uber starts self-driving car pickups in Pittsburgh";
+    news[9][3] = "Yahoo confirms data breach affecting 500 million accounts";
+    news[9][4] = "Samsung recalls Galaxy Note 7 after battery explosion reports";
+    news[9][5] = "Bayer acquires Monsanto for $66 billion in record agriculture deal";
+    news[9][6] = "OPEC agrees to first oil output cut in 8 years to boost prices";
+    news[9][7] = "Deutsche Bank shares plunge amid $14 billion U.S. settlement demand";
+    news[9][8] = "Snapchat unveils video-recording Spectacles, rebrands as Snap Inc.";
+    news[9][9] = "Alphabet's Google launches smartphone, virtual reality headset";
+
+    // Oct 2016
+    news[10][0] = "AT&T agrees to buy Time Warner for $85.4 billion";
+    news[10][1] = "Tesla unveils solar roof tiles, Powerwall 2 energy storage";
+    news[10][2] = "Samsung halts Galaxy Note 7 production amid fire concerns";
+    news[10][3] = "Microsoft shares hit all-time high on cloud growth";
+    news[10][4] = "Rockwell Automation rejects $27.5 billion takeover bid from Emerson";
+    news[10][5] = "Ethereum blockchain tech firm raises $200 million in record funding";
+    news[10][6] = "Third cyber attack on Dyn disrupts internet across the U.S.";
+    news[10][7] = "Twitter axes 9% of workforce as revenue growth stalls";
+    news[10][8] = "Visa shares hit record high after strong Q4 earnings report";
+    news[10][9] = "Amazon shares surge as revenue beats expectations";
+
+    // Nov 2016
+    news[11][0] = "Donald Trump wins US presidential election, markets plunge";
+    news[11][1] = "Walmart agrees to $3.3 billion settlement over bribery charges";
+    news[11][2] = "Samsung to buy Harman for $8 billion to boost automotive business";
+    news[11][3] = "Opec agrees to cut oil production in bid to raise prices";
+    news[11][4] = "UK government approves $24 billion nuclear power plant deal";
+    news[11][5] = "Alibaba smashes sales records on Singles Day shopping event";
+    news[11][6] = "Starbucks opens first premium Reserve bakery cafe";
+    news[11][7] = "Snapchat parent files for $25 billion IPO valuation";
+    news[11][8] = "Amazon develops AI-powered checkout-free grocery store";
+    news[11][9] = "Uber faces more legal challenges over self-driving car project";
+
+    // Dec 2016
+    news[12][0] = "Dow crosses 20,000 milestone for the first time";
+    news[12][1] = "Yahoo reveals 1 billion user accounts were hacked in 2013 breach";
+    news[12][2] = "Uber shifts gears with $1 billion deal for self-driving startup";
+    news[12][3] = "Samsung blames battery flaws for Galaxy Note 7 fires";
+    news[12][4] = "Apple supplier Foxconn weighs $7 billion investment in US";
+    news[12][5] = "Trump claims $50 billion SoftBank investment after meeting";
+    news[12][6] = "Deutsche Bank agrees to $7.2 billion mortgage settlement";
+    news[12][7] = "Snapchat confidentially files for $25 billion IPO valuation";
+    news[12][8] = "Coca-Cola appoints Quincey as new CEO to succeed Muhtar Kent";
+    news[12][9] = "Amazon hits $1,000 stock price with market cap above $475 billion";
+
+    // Jan 2017
+    news[13][0] = "Dow hits 20,000 for the first time as Trump rally continues";
+    news[13][1] = "Netflix adds more subscribers than expected, shares surge";
+    news[13][2] = "Snapchat parent Snap Inc. aims to raise $3 billion in IPO";
+    news[13][3] = "Trump withdraws from Trans-Pacific Partnership trade deal";
+    news[13][4] = "Samsung blames battery flaws for Galaxy Note 7 fires";
+    news[13][5] = "Alibaba becomes major sponsor of Olympic Games through 2028";
+    news[13][6] = "Starbucks to hire 10,000 refugees over next 5 years";
+    news[13][7] = "GM to invest $1 billion in U.S. factories, add or keep 7,000 jobs";
+    news[13][8] = "Apple files $1 billion lawsuit against Qualcomm over royalties";
+    news[13][9] = "Uber hires NASA engineer to lead flying car project";
+
+    // Feb 2017
+    news[14][0] = "Snap Inc. prices IPO at $17 per share, valuing it at $24 billion";
+    news[14][1] = "Kraft Heinz drops $143 billion bid for Unilever after rejection";
+    news[14][2] = "Tesla swings to profit, driven by record electric vehicle sales";
+    news[14][3] = "Uber CEO orders 'urgent' investigation into harassment claims";
+    news[14][4] = "Amazon to create 100,000 full-time jobs in U.S. over next 18 months";
+    news[14][5] = "Apple joins group working on open-source artificial intelligence";
+    news[14][6] = "Samsung chief Lee Jae-yong arrested in corruption scandal";
+    news[14][7] = "Walmart to create 10,000 U.S. jobs as part of investment plan";
+    news[14][8] = "Verizon announces $350 million investment, reversing job cuts";
+    news[14][9] = "Burger King and Tim Hortons owner to buy Popeyes for $1.8 billion";
+
+    // Mar 2017
+    news[15][0] = "Snap shares soar 44% on debut after $3.4 billion IPO";
+    news[15][1] = "Amazon to acquire Middle Eastern online retailer Souq.com";
+    news[15][2] = "Uber presidency left vacant amid turmoil at the company";
+    news[15][3] = "Apple unveils new iPad and special edition iPhone 7 & 7 Plus";
+    news[15][4] = "Google apologizes after ads appear next to extremist videos";
+    news[15][5] = "Sears warns of 'going concern' doubts amid $2.2 billion loss";
+    news[15][6] = "Toshiba's Westinghouse nuclear unit files for bankruptcy";
+    news[15][7] = "Wells Fargo agrees to pay $142 million in fake account scandal";
+    news[15][8] = "Ford to invest $1.2 billion in three Michigan plants";
+    news[15][9] = "EU blocks London Stock Exchange's $28 billion merger with Deutsche Boerse";
+
+    // Apr 2017
+    news[16][0] = "United Airlines passenger violently dragged from overbooked flight";
+    news[16][1] = "Tesla overtakes GM as most valuable US automaker";
+    news[16][2] = "Uber caught tracking ex-users after them uninstalling app";
+    news[16][3] = "Verizon launches unlimited data plan amid fierce competition";
+    news[16][4] = "Wells Fargo claws back $75 million more from former executives";
+    news[16][5] = "Bidding war erupts for $24 billion truck maker Navistar";
+    news[16][6] = "Facebook's Messenger app tops 1.2 billion monthly users";
+    news[16][7] = "FCC unveils plan to repeal Obama-era 'net neutrality' rules";
+    news[16][8] = "Nintendo Switch sales top 2.7 million units in less than a month";
+    news[16][9] = "Amazon acquires Dubai online retailer Souq.com for $650 million";
+
+
+    // May 2017
+    news[17][0] = "Uber admits 'major' underpayment blunder for NYC drivers";
+    news[17][1] = "Amazon shares top $1,000 for the first time amid retail domination";
+    news[17][2] = "Ford replaces CEO Mark Fields amid plunging share price";
+    news[17][3] = "Microsoft refreshes Surface Pro, launches Windows 10 Fall update";
+    news[17][4] = "Moody's downgrades China's credit rating amid debt concerns";
+    news[17][5] = "Google's Android platform was a billion-dollar transfer from Apple";
+    news[17][6] = "Cisco to lay off 1,100 more employees in extended restructuring";
+    news[17][7] = "Bitcoin surges above $2,000 as global demand intensifies";
+    news[17][8] = "Zuckerberg urges Harvard grads to embrace globalization";
+    news[17][9] = "OPEC and allies extend production cuts to end of 2018";
+
+    // Jun 2017
+    news[18][0] = "Amazon to acquire Whole Foods for $13.7 billion";
+    news[18][1] = "Uber CEO Travis Kalanick forced to resign after investor revolt";
+    news[18][2] = "Google faces $2.7 billion EU fine for favoring its shopping service";
+    news[18][3] = "Berkshire Hathaway buys 38.6% stake in trucker Pilot Flying J";
+    news[18][4] = "Walmart reportedly exploring way to offer low-cost streaming service";
+    news[18][5] = "Boeing strikes deal to sell planes to Iran worth $20 billion";
+    news[18][6] = "Elon Musk offers to help rebuild Puerto Rico's power grid";
+    news[18][7] = "Alibaba joins bidding war for India's leading e-commerce company";
+    news[18][8] = "Petya cyber attack strikes companies across Europe and US";
+    news[18][9] = "Google to stop scanning Gmail for ad targeting";
+
+    // Jul 2017
+    news[19][0] = "Amazon's Prime Day sales topped $1 billion despite website issues";
+    news[19][1] = "FTC approves $13.7 billion acquisition of Whole Foods by Amazon";
+    news[19][2] = "Elon Musk's Tesla to build world's largest battery in Australia";
+    news[19][3] = "Blue Apron slashes IPO price as Amazon looms in meal-kit market";
+    news[19][4] = "Michael Kors to buy luxury shoemaker Jimmy Choo for $1.2 billion";
+    news[19][5] = "Alphabet beats expectations despite $2.7 billion EU antitrust fine";
+    news[19][6] = "Uber's legal woes worsen as ex-employee alleges coverup effort";
+    news[19][7] = "PayPal to integrate with Amazon's Alexa digital assistant";
+    news[19][8] = "Daimler to recall 3 million Mercedes-Benz diesels in Europe";
+    news[19][9] = "Foxconn unveils plan to build $10 billion LCD factory in Wisconsin";
+
+    // Aug 2017
+    news[20][0] = "Amazon issues $16 billion bond sale to fund Whole Foods deal";
+    news[20][1] = "Tesla bonds price with junk rating, 5.3% yield amid cash burn";
+    news[20][2] = "Disney to launch ESPN and Disney-branded streaming services";
+    news[20][3] = "Uber agrees to 20 years of privacy audits to settle charges";
+    news[20][4] = "Tencent becomes world's 10th largest company by market value";
+    news[20][5] = "Alibaba beats expectations as online sales in China surge";
+    news[20][6] = "Sempra Energy to buy Oncor for $9.45 billion after Buffett bows out";
+    news[20][7] = "Samsung unveils Galaxy Note 8 after battery fiasco";
+    news[20][8] = "Walmart partners with Google on voice-based shopping";
+    news[20][9] = "BlackBerry misses sales forecasts, shares tumble";
+
+    // Sep 2017
+    news[21][0] = "Equifax breach exposed data of 143 million U.S. consumers";
+    news[21][1] = "Apple unveils $999 iPhone X with face recognition technology";
+    news[21][2] = "SEC reveals cyber breach, raising concerns about internal lapses";
+    news[21][3] = "Toys 'R' Us files for bankruptcy amid crushing debt load";
+    news[21][4] = "Uber loses license to operate in London after sexual assaults";
+    news[21][5] = "Northrop Grumman buys aerospace firm Orbital ATK for $9.2 billion";
+    news[21][6] = "Facebook says it will hand Russian ads over to Congress";
+    news[21][7] = "Tesla working with AMD to develop chip for self-driving cars";
+    news[21][8] = "Amazon plans second headquarters, opens $5 billion investment bidding";
+    news[21][9] = "Lufthansa in talks to buy parts of insolvent Air Berlin";
+
+    // Oct 2017
+    news[22][0] = "Amazon receives 238 proposals for its second headquarters";
+    news[22][1] = "Kobe Steel faked product data for over 10 years, sending shockwaves";
+    news[22][2] = "Alphabet's Google uncovers Russia-backed ads on YouTube, Gmail";
+    news[22][3] = "Tesla fires hundreds of workers as company struggles with production";
+    news[22][4] = "Airbus to acquire majority stake in Bombardier C Series program";
+    news[22][5] = "AT&T's $85 billion acquisition of Time Warner hit with lawsuit";
+    news[22][6] = "CVS Health to acquire health insurer Aetna for $69 billion";
+    news[22][7] = "Intel products hit with security flaw in widespread 'KRACK' attack";
+    news[22][8] = "Bitcoin soars above $6,000, doubling in price in less than a month";
+    news[22][9] = "Disney extends buyout negotiations after hitting a 'slew of issues'";
+
+    // TODO: move to init.c
+    // 18 data points; should be enough for demo
 }
 
 static void stocks_init() {
-    // TODO: Write python script to generate code that initializes stocks data
+    // Data Source: Yahoo Finance scraped with Python script
     ticker.n = 20;
     ticker.top = 0;
     ticker.stocks[0] = (stock_t){
@@ -279,7 +489,7 @@ static void draw_news(int x, int y) {
     for (int i = 0; i < min(N_NEWS_DISPLAY, news.n - news.top); i++) {
         int ind = news.top + i;
         char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
-        snprintf(buf, N_COLS_REQ + 1, "%02d) %s", ind + 1, news.text[ind]); 
+        snprintf(buf, N_COLS_REQ + 1, "%02d) %s", ind + 1, news.text[module.time][ind]); 
         int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
         gl_draw_string(x_pix, y_pix, buf, news.color);
     } 
@@ -346,7 +556,7 @@ static void draw_graph(int x, int y, int stock_ind) {
     else if (50 < diff && diff <= 100) step_size = 10;
     else if (100 < diff && diff <= 200) step_size = 20;
     else {
-        // TODO: Add resize mechanism for volatile stocks
+        // TODO: Add resize mechanism for volatile stocks like NVDA
         printf("WARNING: stock too volatile (max_interval_price - min_interval_price) = %d > 200\n", diff);
         printf("         displaying only portions of the stock graph\n");
         step_size = 20;
@@ -411,6 +621,9 @@ static void hstimer0_handler(uintptr_t pc, void *aux_data) {
             memory_report();
             return;
         }
+        ticker.top = 0;
+        news.top = 0;
+        return;
     }
     ticker.top += N_TICKER_DISPLAY;
     if (ticker.top >= ticker.n) {
@@ -433,6 +646,10 @@ void interface_init(int nrows, int ncols) {
     gpio_init();
     timer_init();
     uart_init();
+
+    // TODO: Test Floating Point
+    float f = 0.324;
+    printf("%f\n", f);
     printf("Now running interface!\n");
 
     // settings
