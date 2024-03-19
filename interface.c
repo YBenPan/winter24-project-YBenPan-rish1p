@@ -24,7 +24,7 @@ extern void memory_report();
 static struct {
     color_t bg_color;
     int time;
-    int tick_10s; // tracks (# 10s-ticks) mod 3
+    int tick; // tracks # ticks mod (time of one refresh)
     int nrows, ncols, line_height;
 } module;
 
@@ -48,6 +48,10 @@ static struct {
     color_t color;
     const char *text[N_TIME][MAX_NEWS];
 } news; 
+
+static struct {
+    int shares[MAX_STOCKS];
+} inventory;
 
 static date_t dates;
 
@@ -94,9 +98,236 @@ static int rprintf(char dst[], char src[], size_t max_size) {
     return max_size;
 }
 
-// Initialization functions
+// Initialization functions prototypes
+static void news_init(void);
+static void stocks_init(void);
+static void dates_init(void);
+static void data_init(void);
 
-static void news_init() {
+// Core graphics functions
+static void draw_date(int x, int y) {
+    const static int N_ROWS_REQ = 1, N_COLS_REQ = 8;
+    char buf[N_COLS_REQ + 1];
+    snprintf(buf, N_COLS_REQ + 1, "%s", dates.str[module.time]);
+    gl_draw_string(gl_get_char_width() * x, module.line_height * y, buf, GL_AMBER);
+}
+
+static void draw_news(int x, int y) {
+    // x, y are in character units (not pixels)
+    const static int N_ROWS_REQ = 9, N_COLS_REQ = 80;
+    if (x + N_COLS_REQ > module.ncols || y + N_ROWS_REQ > module.nrows) {
+        printf("Error: News out of bounds\n");
+        return;
+    }
+    for (int i = 0; i < min(N_NEWS_DISPLAY, news.n - news.top); i++) {
+        int ind = news.top + i;
+        char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
+        snprintf(buf, N_COLS_REQ + 1, "%02d) %s", ind + 1, news.text[module.time][ind]); 
+        int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
+        gl_draw_string(x_pix, y_pix, buf, news.color);
+    } 
+}
+
+static void draw_ticker(int x, int y) {
+    // x, y are in character units (not pixels)
+    const static int N_ROWS_REQ = 13, N_COLS_REQ = 12;
+    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
+        printf("Error: Ticker out of bounds\n");
+        return;
+    }
+    
+    for (int i = 0; i < min(N_TICKER_DISPLAY, ticker.n - ticker.top); i++) {
+        int ind = ticker.top + i;
+        char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
+        int close_price = ticker.stocks[ind].close_price[module.time];
+        int open_price = ticker.stocks[ind].open_price[module.time];
+        int pct_change = (close_price - open_price) * 100 / open_price;
+
+        // Print symbol and pct change separately in two strings
+        snprintf(buf, N_COLS_REQ + 1, "%s", ticker.stocks[ind].symbol); 
+        char buf1[N_COLS_REQ + 1];
+        lprintf(buf1, buf, 6);
+        int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
+        gl_draw_string(x_pix, y_pix, buf1, GL_AMBER);
+
+        buf[0] = '\0';
+        buf1[0] = '\0';
+        snprintf(buf, N_COLS_REQ + 1, "%d%%", pct_change);
+        rprintf(buf1, buf, 4);
+        x_pix = gl_get_char_width() * (x + 5);
+        y_pix = module.line_height * (y + 1 + i); 
+        gl_draw_string(x_pix, y_pix, buf1, (pct_change >= 0 ? GL_GREEN : GL_RED));
+    }
+}
+
+static void draw_graph(int x, int y, int stock_ind) {
+    // `stock_ind` = index of stock in ticker.stocks[]
+    const static int N_ROWS_REQ = 18, N_COLS_REQ = 28;
+    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
+        printf("Error: graph out of bounds\n");
+        return;
+    }
+
+    const static int N_TIME_DISPLAY = 10;
+    const static int N_PRICE_INTERVALS = 12; // for room 
+    int start_time = max(0, module.time - N_TIME_DISPLAY + 1), end_time = module.time;
+    float max_interval_price = 0, min_interval_price = 100000;
+    for (int i = start_time; i <= end_time; i++) {
+        float open_price = ticker.stocks[stock_ind].open_price[i];
+        float close_price = ticker.stocks[stock_ind].close_price[i];
+        float high_price = ticker.stocks[stock_ind].high_price[i];
+        float low_price = ticker.stocks[stock_ind].low_price[i];
+        max_interval_price = fmax(max_interval_price, fmax(open_price, close_price));
+        max_interval_price = fmax(max_interval_price, fmax(high_price, low_price));
+        min_interval_price = fmin(min_interval_price, fmin(open_price, close_price));
+        min_interval_price = fmin(min_interval_price, fmin(high_price, low_price));
+    }
+
+    // calculate step size
+    float step_size, diff = max_interval_price - min_interval_price; 
+    if (1 <= diff && diff <= 10) step_size = ceil(diff) / 10;
+    else if (10 < diff && diff <= 20) step_size = 2;
+    else if (20 < diff && diff <= 40) step_size = 4;
+    else if (40 < diff && diff <= 50) step_size = 5;
+    else if (50 < diff && diff <= 100) step_size = 10;
+    else if (100 < diff && diff <= 200) step_size = 20;
+    else if (200 < diff && diff <= 400) step_size = 40;
+    else if (400 < diff && diff <= 800) step_size = 80;
+    else {
+        if (diff < 1) { // two or more digits after decimal point not supported
+            printf("WARNING: stock too static (max_interval_price - min_interval_price = %f < 1)\n", diff);
+        }
+        if (diff > 80) {
+            printf("WARNING: stock too volatile (max_interval_price - min_interval_price = %f > 200)\n", diff);
+        }
+        return; 
+    }
+
+    // draw title
+    char buf[N_COLS_REQ + 1], buf1[N_COLS_REQ + 1];
+    snprintf(buf, N_COLS_REQ + 1, "%s (%s)\n", ticker.stocks[stock_ind].name, ticker.stocks[stock_ind].symbol);
+    gl_draw_string(gl_get_char_width() * x, module.line_height * y, buf, GL_AMBER);
+
+    // draw axes
+    float graph_min = (int)(min_interval_price / step_size) * step_size;
+    float graph_max = graph_min + N_PRICE_INTERVALS * step_size;
+    for (int i = 0; i < N_PRICE_INTERVALS; i++) {
+        buf[0] = '\0'; buf1[0] = '\0';
+        snprintf(buf, N_COLS_REQ + 1, "%.1f-", graph_max - i * step_size);
+        rprintf(buf1, buf, 8);
+        int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + i);
+        gl_draw_string(x_pix, y_pix, buf1, GL_WHITE);
+    }
+    int x_pix = gl_get_char_width() * (x + 8), y_pix = module.line_height * (y + 1);
+    gl_draw_line(x_pix, y_pix, x_pix, y_pix + module.line_height * (y + 1 + N_PRICE_INTERVALS) - 1, GL_WHITE);
+    y_pix = module.line_height * (y + 1 + N_PRICE_INTERVALS);
+    gl_draw_line(x_pix, y_pix, x_pix + 21 * gl_get_char_width(), y_pix, GL_WHITE);
+    
+    // draw box plot
+    for (int i = 0; i <= end_time - start_time; i++) {
+        float open_price = ticker.stocks[stock_ind].open_price[i + start_time];
+        float close_price = ticker.stocks[stock_ind].close_price[i + start_time];
+        float high_price = ticker.stocks[stock_ind].high_price[i + start_time];
+        float low_price = ticker.stocks[stock_ind].low_price[i + start_time];
+        float max_price = fmax(open_price, close_price), min_price = fmin(open_price, close_price);
+        int bx = (x + 8 + 2 * i) * gl_get_char_width() + 4;
+        int by = (y + 1) * module.line_height + (graph_max - max_price) * 20 / step_size;
+        int w = 2 * (gl_get_char_width() - 4);
+        int h = (max_price - min_price) * 20 / step_size;
+        int ly1 = (y + 1) * module.line_height + (graph_max - high_price) * 20 / step_size;
+        int ly2 = (y + 1) * module.line_height + (graph_max - low_price) * 20 / step_size;
+        int lx = (x + 8 + 2 * i) * gl_get_char_width() + 13;
+        color_t color = (open_price >= close_price ? GL_RED : GL_GREEN);
+        gl_draw_rect(bx, by, w, h, color);
+        gl_draw_line(lx, ly1, lx, ly2, color);
+        gl_draw_line(lx + 1, ly1, lx + 1, ly2, color);
+        gl_draw_line(lx + 2, ly1, lx + 2, ly2, color);
+    }
+}
+
+static void draw_all() {
+    gl_clear(module.bg_color);
+    draw_date(0, 0);
+    draw_graph(12, 0, 2);
+    draw_ticker(0, 3);
+    draw_news(0, 16);
+}
+
+static void display() {
+    gl_swap_buffer();
+}
+
+// Interrupt handlers
+static void hstimer0_handler(uintptr_t pc, void *aux_data) {
+    module.tick = (module.tick + 1) % 2;
+    if (module.tick == 0) {
+        module.time++; // increases every 30 seconds, or 3 10-s ticks
+        if (module.time == 100) {
+            hstimer_interrupt_clear(HSTIMER0);
+            hstimer_disable(HSTIMER0);
+            interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, NULL, NULL);
+            interrupts_disable_source(INTERRUPT_SOURCE_HSTIMER0);
+            memory_report();
+            return;
+        }
+        ticker.top = 0;
+        news.top = 0;
+        return;
+    }
+    ticker.top += N_TICKER_DISPLAY;
+    if (ticker.top >= ticker.n) {
+        ticker.top = 0;
+    }
+    news.top += N_NEWS_DISPLAY;
+    if (news.top >= news.n) {
+        news.top = 0;
+    }
+    draw_all();
+    display();
+    hstimer_interrupt_clear(HSTIMER0);
+}
+
+void interface_init(int nrows, int ncols) {
+    const static int LINE_SPACING = 4;
+
+    data_init();
+    interrupts_init();
+    gpio_init();
+    timer_init();
+    uart_init();
+
+    printf("Now running interface!\n");
+
+    // settings
+    module.bg_color = GL_BLACK;
+    module.time = 5;
+    module.nrows = nrows;
+    module.ncols = ncols;
+    module.line_height = gl_get_char_height() + LINE_SPACING;
+    module.tick = 0;
+
+    // display
+    gl_init(ncols * gl_get_char_width(), nrows * module.line_height, GL_DOUBLEBUFFER);
+    draw_all();
+    display();
+
+    // interrupt settings
+    hstimer_init(HSTIMER0, 5000000);
+    hstimer_enable(HSTIMER0);
+    interrupts_enable_source(INTERRUPT_SOURCE_HSTIMER0);
+    interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, hstimer0_handler, NULL);
+    // for 30s: track # calls mod 3 with global variable tick_10s
+
+    interrupts_global_enable(); // everything fully initialized, now turn on interrupts
+}
+
+void main(void) {
+    interface_init(30, 80);
+    while (1) {
+    }
+}
+
+static void news_init(void) {
     // initialize news
     // Data obtained via Claude AI
     news.n = 10; // at most MAX_NEWS
@@ -320,10 +551,932 @@ static void news_init() {
     news.text[22][8] = "Bitcoin soars above $6,000, doubling in price in less than a month";
     news.text[22][9] = "Disney extends buyout negotiations after hitting a 'slew of issues'";
 
-    // 18 data points; should be enough for demo
+    // Nov 2017
+    news.text[23][0] = "Saudi Arabia's sovereign wealth fund builds $2 billion stake in Uber";
+    news.text[23][1] = "Broadcom bids $130 billion for Qualcomm in landmark deal";
+    news.text[23][2] = "Alibaba smashes Singles Day record with over $25 billion in sales";
+    news.text[23][3] = "Bitcoin surges past $8,000 as investors pile into cryptocurrency";
+    news.text[23][4] = "Uber loses lawsuit against Waymo over alleged tech theft";
+    news.text[23][5] = "Amazon Web Services outage wreaks havoc across the internet";
+    news.text[23][6] = "Toshiba agrees to sell chip unit to Bain Capital for $18 billion";
+    news.text[23][7] = "Volvo to supply Uber with up to 24,000 self-driving cars";
+    news.text[23][8] = "AT&T's $85 billion acquisition of Time Warner approved by judges";
+    news.text[23][9] = "Tesla unveils its first electric semi-truck and new Roadster";
+    
+    // Dec 2017
+    news.text[24][0] = "Bitcoin futures make debut on major exchanges, prices surge";
+    news.text[24][1] = "Congressional Republicans reach deal on final tax overhaul bill";
+    news.text[24][2] = "Disney agrees to buy key 21st Century Fox assets for $52.4 billion";
+    news.text[24][3] = "Fed raises interest rates amid stronger economic growth";
+    news.text[24][4] = "Apple faces lawsuits after admitting to slowing down older iPhones";
+    news.text[24][5] = "Uber sells stake to SoftBank achieving $48 billion valuation";
+    news.text[24][6] = "Cryptocurrency bitcoin breaks through $20,000 milestone";
+    news.text[24][7] = "Overstock becomes first major retailer to accept cryptocurrency";
+    news.text[24][8] = "Trump blocks $1.2 billion Moneygram acquisition by Alibaba affiliate";
+    news.text[24][9] = "Facebook to book tax expenses related to Republican tax reforms";
+
+    // Jan 2018
+    news.text[25][0] = "Cryptocurrency markets suffer historic price crash and volatility";
+    news.text[25][1] = "Apple plans to pay $38 billion in tax on overseas cash";
+    news.text[25][2] = "Amazon climbs into elite club of $1 trillion companies";
+    news.text[25][3] = "Facebook overhauls News Feed to focus on friends and family";
+    news.text[25][4] = "Intel hit with three lawsuits over security flaw in chip designs";
+    news.text[25][5] = "Meltdown and Spectre flaws affect virtually all modern processors";
+    news.text[25][6] = "Tesla delays Model 3 production targets yet again";
+    news.text[25][7] = "YouTube pulls ads from Logan Paul videos over suicide forest clip";
+    news.text[25][8] = "SpaceX launches secret Zuma payload, but mission status is unconfirmed";
+    news.text[25][9] = "GM launches new Chevrolet Silverado pickup to take on Ford F-150";
+
+    // Feb 2018
+    news.text[26][0] = "Dow plunges nearly 1,600 points, its biggest intraday point drop ever";
+    news.text[26][1] = "Jeff Bezos tops Bill Gates as world's richest person";
+    news.text[26][2] = "Snapchat update leads to backlash and 1.2 million signed petition";
+    news.text[26][3] = "Elon Musk's Tesla Roadster launched into space aboard SpaceX rocket";
+    news.text[26][4] = "Amazon reportedly laying off hundreds of corporate employees";
+    news.text[26][5] = "Bill Gates could no longer be world's richest if he paid off US debt";
+    news.text[26][6] = "Bitcoin tumbles below $6,000 amid broader cryptocurrency selloff";
+    news.text[26][7] = "Roku outperformed all other major technology stocks in 2017";
+    news.text[26][8] = "Warren Buffett outlines 'terrible' mistake of not investing in Amazon";
+    news.text[26][9] = "Ford ousts chief of North American operations amid misconduct probe";
+
+    // Mar 2018
+    news.text[27][0] = "Facebook stock plunges amid Cambridge Analytica data scandal";
+    news.text[27][1] = "Uber exits Southeast Asia in new swap deal with Grab";
+    news.text[27][2] = "Trump blocks Broadcom's $117 billion bid for Qualcomm on security grounds";
+    news.text[27][3] = "Dropbox raises $756 million in biggest tech IPO of 2018 so far";
+    news.text[27][4] = "Tesla says autopilot was active during fatal Model X crash";
+    news.text[27][5] = "Amazon is now second most valuable US company, tops Alphabet";
+    news.text[27][6] = "Alibaba develops car vending machine for buyers in China";
+    news.text[27][7] = "YouTube tries to crack down on video creators for conspiracy theories";
+    news.text[27][8] = "Volkswagen stored data on 3.3 million truck owners in unauthorized way";
+    news.text[27][9] = "Trump ousts Secretary of State Rex Tillerson in another shakeup";
+
+    // Apr 2018
+    news.text[28][0] = "Facebook reveals data on 87 million users was improperly shared";
+    news.text[28][1] = "Amazon tops 100 million Prime subscribers, pushing towards profitability";
+    news.text[28][2] = "Uber welcomes Toyota as latest investor with $500 million stake";
+    news.text[28][3] = "T-Mobile and Sprint restart merger talks after years of battling";
+    news.text[28][4] = "Tesla struggles to meet Model 3 production goals, Musk details excessive toil";
+    news.text[28][5] = "Apple reports strong earnings but warns of higher prices ahead";
+    news.text[28][6] = "FAA orders inspection of 352 Boeing 737 engines after Southwest accident";
+    news.text[28][7] = "Alibaba buys Pakistani e-commerce leader Daraz in latest play";
+    news.text[28][8] = "YouTube targets conspiracy videos in widespread account purge";
+    news.text[28][9] = "Twitter amps up efforts to crack down on toxic content, fake accounts";
+
+    // May 2018
+    news.text[29][0] = "Elon Musk says Tesla will fix production issues by reorganizing management";
+    news.text[29][1] = "Uber unveils plans to launch food delivery drones by 2021";
+    news.text[29][2] = "Warren Buffett criticizes bitcoin as nonproductive and illicit";
+    news.text[29][3] = "Cambridge Analytica files for bankruptcy in US after Facebook data scandal";
+    news.text[29][4] = "Amazon goes head-to-head with Tencent in Southeast Asian cloud war";
+    news.text[29][5] = "Microsoft launches $25 million program to use AI for disabilities";
+    news.text[29][6] = "Instagram launches video chat and new explore features";
+    news.text[29][7] = "US and China put trade war on hold after talks in Washington";
+    news.text[29][8] = "Tesla Autopilot update to include first 'full self-driving features'";
+    news.text[29][9] = "Philip Morris gets approval to market alternative cigarette as less risky";
+
+    // Jun 2018
+    news.text[30][0] = "Tesla cuts 9 percent of workforce in quest to post profit";
+    news.text[30][1] = "Disney raises bid for Fox assets to $71.3 billion, outflanking Comcast";
+    news.text[30][2] = "Uber begins using artificial intelligence to detect drunk passengers";
+    news.text[30][3] = "Microsoft employees revolt against working with US on 'cruel' deportations";
+    news.text[30][4] = "EU hits Google with $5 billion antitrust fine over Android practices";
+    news.text[30][5] = "Supreme Court rules states can collect internet sales tax";
+    news.text[30][6] = "Amazon gains new online footing with $1 billion PillPack acquisition";
+    news.text[30][7] = "Starbucks to accelerate US store closings next year";
+    news.text[30][8] = "BlackBerry bids $1.4 billion for cybersecurity firm Cylance";
+    news.text[30][9] = "Slack staff cracks down on hate speech by racist tech fraternity members";
+
+    // Jul 2018
+    news.text[31][0] = "Broadcom agrees to acquire software company CA Technologies for $18.9 billion";
+    news.text[31][1] = "Netflix shares take hit as subscriber slip hints at 'hubris' problem";
+    news.text[31][2] = "Amazon Prime Day becomes an internet traffic nightmare";
+    news.text[31][3] = "Microsoft secures $4.6 billion contract to supply US army with AR headsets";
+    news.text[31][4] = "Elon Musk faces backlash after insulting Thai cave rescue diver";
+    news.text[31][5] = "Comcast outbids Fox in $39 billion battle for Sky TV in Britain";
+    news.text[31][6] = "Facebook hit with first fine in Cambridge Analytica data leak scandal";
+    news.text[31][7] = "Tesla achieves Model 3 production goals, but cuts costs remain";
+    news.text[31][8] = "Twitter purges more locked accounts from follower counts";
+    news.text[31][9] = "Uber gets approval to put self-driving cars on roads again";
+
+    // Aug 2018
+    news.text[32][0] = "Tesla CEO Elon Musk considers taking company private, faces SEC scrutiny";
+    news.text[32][1] = "Apple hits $1 trillion market cap before sliding back";
+    news.text[32][2] = "Alibaba's quarterly revenue surges 61 percent amid e-commerce boom";
+    news.text[32][3] = "MoviePass slashes access to block availability amid cash crisis";
+    news.text[32][4] = "Uber narrows losses but growth slows amid cash burn";
+    news.text[32][5] = "Twitter CEO commits to fixing toxic content after racist attack";
+    news.text[32][6] = "Microsoft soars past $800 billion in market value for the first time";
+    news.text[32][7] = "Google staff protest over censored China search engine 'Dragonfly'";
+    news.text[32][8] = "Coca-Cola to buy UK coffee chain Costa for $5.1 billion";
+    news.text[32][9] = "Amazon joins $1 trillion club, becomes second company after Apple";
+
+    // Sep 2018
+    news.text[33][0] = "Amazon becomes the second $1 trillion company in the U.S";
+    news.text[33][1] = "Tesla says it will remain a public company after Musk's controversial tweet";
+    news.text[33][2] = "Apple unveils iPhone XS, XS Max and lower-cost XR models";
+    news.text[33][3] = "Ticketmaster recruits ethicists to review its business practices";
+    news.text[33][4] = "Alibaba's Jack Ma to step down as chairman in September 2019";
+    news.text[33][5] = "Uber agrees to pay $148 million over allegation of data breach coverup";
+    news.text[33][6] = "Walmart opens first e-commerce distribution center to take on Amazon";
+    news.text[33][7] = "Spotify announces it will now work with Alexa and Amazon devices";
+    news.text[33][8] = "Uber driver pay data for 92 million drivers exposed in hack";
+    news.text[33][9] = "Google staff discussed tweaking search results to counter travel ban";
+
+    // Oct 2018
+    news.text[34][0] = "Saudi Arabia invites global investors to participate in IPO of Aramco";
+    news.text[34][1] = "Tesla launches new $45,000 Model 3 sedan for the masses";
+    news.text[34][2] = "Facebook security breach exposes 50 million user accounts";
+    news.text[34][3] = "Canada follows Uruguay in legalizing recreational marijuana nationwide";
+    news.text[34][4] = "Amazon launches first AI hybrid online/physical shopping experience";
+    news.text[34][5] = "SoftBank's massive $100 billion Vision Fund struggles on some bets";
+    news.text[34][6] = "Microsoft co-founder Paul Allen dies at 65 after battle with cancer";
+    news.text[34][7] = "Google unveils new Pixel 3 phones, Home Hub and AI computer titles";
+    news.text[34][8] = "Elon Musk says first tunnel for LA 'disturbingly long' underground bus route almost done";
+    news.text[34][9] = "Uber IPO could put company value at $120 billion, sources say";
+
+    // Nov 2018
+    news.text[35][0] = "Amazon picks New York City and Virginia for $5 billion new headquarters";
+    news.text[35][1] = "Walmart beats Amazon's online prices for the first time, study shows";
+    news.text[35][2] = "Microsoft overtakes Apple as the most valuable US company";
+    news.text[35][3] = "Facebook CEO Mark Zuckerberg rejects criticism over handling of scandals";
+    news.text[35][4] = "Uber reports $1 billion loss as comeback from scandals proves painful";
+    news.text[35][5] = "Disney set to gain ground with newly approved Fox deal";
+    news.text[35][6] = "Elon Musk's Boring Company scraps plans for LA Westside tunnel";
+    news.text[35][7] = "Bitcoin sinks below $5,000, half its 2018 peak of near $20,000";
+    news.text[35][8] = "Juul halts store sales of some flavored e-cigarette pods amid outcry";
+    news.text[35][9] = "GM to lay off up to 14,000 factory and white-collar workers";
+
+    // Dec 2018
+    news.text[36][0] = "Dow suffers worst Christmas Eve massacre, dropping 653 points";
+    news.text[36][1] = "Apple shares drop 7% after warning of weak holiday iPhone sales";
+    news.text[36][2] = "Jeff and MacKenzie Bezos announce plans to divorce after 25 years";
+    news.text[36][3] = "Dow caps off worst year since 2008 financial crisis amid trade tensions";
+    news.text[36][4] = "Tesla misses Model 3 delivery targets yet again, stock plunges";
+    news.text[36][5] = "Amazon issues no-fee salary advance amid worker cash crisis";
+    news.text[36][6] = "Ford recalls 874,000 F-Series pickup trucks for fire risks";
+    news.text[36][7] = "Wells Fargo agrees to $575 million settlement over improper practices";
+    news.text[36][8] = "SpaceX raises $500 million from investors as internet satellite production ramps";
+    news.text[36][9] = "Facebook refutes claims of sharing user data without permission";
+
+    // Jan 2019
+    news.text[37][0] = "Apple issues rare revenue warning citing weak China sales";
+    news.text[37][1] = "Stocks suffer worst December since the Great Depression";
+    news.text[37][2] = "PG&E files for bankruptcy amid wildfire lawsuits and billions in liabilities";
+    news.text[37][3] = "Billionaire Jeff Bezos announces divorce from wife MacKenzie after 25 years";
+    news.text[37][4] = "Huawei employee arrested in Poland over spying allegations";
+    news.text[37][5] = "Tesla misses Model 3 delivery targets again, cuts prices";
+    news.text[37][6] = "Snap employees fear being left behind in US government shutdown";
+    news.text[37][7] = "Netflix raises subscription prices to fund new content";
+    news.text[37][8] = "World Bank issues warning over global 'storm' of debt";
+    news.text[37][9] = "Cryptocurrency bitcoin drops below $3,500, down 80% from highs";
+
+    // Feb 2019
+    news.text[38][0] = "Amazon scraps plans to build headquarters in New York City";
+    news.text[38][1] = "Tesla loses $700 million after another difficult year";
+    news.text[38][2] = "Payless ShoeSource to close all remaining US stores";
+    news.text[38][3] = "Kraft Heinz discloses $15 billion writedown, SEC investigation";
+    news.text[38][4] = "Honda to shutdown UK plant in latest Brexit blow";
+    news.text[38][5] = "Samsung unveils foldable phone, the Galaxy Fold";
+    news.text[38][6] = "Elon Musk's security clearance under review over marijuana use";
+    news.text[38][7] = "Fiat Chrysler to pay $700 million for emissions cheating";
+    news.text[38][8] = "SpaceX launches triple core rocket and crew capsule";
+    news.text[38][9] = "Warren Buffett says Kraft Heinz problems are 'my fault'";   
+    
+    // Mar 2019
+    news.text[39][0] = "Apple launches news.text subscription app Apple News+ for $9.99 a month";
+    news.text[39][1] = "Lyft kicks off investor road show for IPO expected to value it at $23bn";
+    news.text[39][2] = "Facebook suffers its worst outage in over a decade";
+    news.text[39][3] = "Pinterest joins rush of tech companies planning 2019 IPOs";
+    news.text[39][4] = "Cruise ship company Virgin Voyages turns to Boeing 737 crashes";
+    news.text[39][5] = "FAA grounds Boeing 737 Max planes after fatal Ethiopia crash";
+    news.text[39][6] = "Bayer's $63 billion Monsanto takeover upended by Roundup cancer ruling";
+    news.text[39][7] = "Facebook faced criminal investigation for data sharing deals";
+    news.text[39][8] = "Volkswagen CEO apologizes after evoking Nazi slogan 'Arbeit macht frei'";
+    news.text[39][9] = "Levi Strauss valued at $6.6 billion for iconic jeans maker's return to markets";
+
+    // Apr 2019
+    news.text[40][0] = "Uber reveals IPO terms that could value company at up to $84 billion";
+    news.text[40][1] = "Pinterest valued at $12.7 billion after IPO, rallies in market debut";
+    news.text[40][2] = "Samsung retrieving all Galaxy Fold samples after defective screens";
+    news.text[40][3] = "Tesla says investigating incident of car catching fire in Shanghai";
+    news.text[40][4] = "Amazon to pull plug on China domestic e-commerce business";
+    news.text[40][5] = "Boeing says it knew about 737 Max sensor problem before crashes";
+    news.text[40][6] = "Elon Musk, SEC go to court over his Tesla tweets";
+    news.text[40][7] = "Microsoft hits $1 trillion market cap after reporting strong earnings";
+    news.text[40][8] = "Disney unveils $6.99 streaming bundle with Hulu, ESPN+ for Netflix attack";
+    news.text[40][9] = "Anadarko Petroleum rejects Occidental's $38 billion offer";
+
+    // May 2019
+    news.text[41][0] = "Uber bumps up its IPO pricing to raise $8.1 billion";
+    news.text[41][1] = "Trump increases tariffs on $200 billion of Chinese goods to 25%";
+    news.text[41][2] = "Huawei hit by US export controls, potential import ban";
+    news.text[41][3] = "Uber begins trading at $42 per share in anticipated IPO";
+    news.text[41][4] = "Fiat Chrysler proposes merger with Renault to create auto giant";
+    news.text[41][5] = "GameStop shares plunge 36% as console sales miss estimates";
+    news.text[41][6] = "Amazon shareholders reject motion to ban facial recognition sales";
+    news.text[41][7] = "Tesla stock and bonds tumble after Musk's 'Eferesced' tweet for beer";
+    news.text[41][8] = "Facebook takes step to integrate apps for encrypted messaging";
+    news.text[41][9] = "Avengers: Endgame kicks off a huge summer for Disney";
+
+    // Jun 2019
+    news.text[42][0] = "Uber loses $1 billion in Q1 as revenue growth slows";
+    news.text[42][1] = "YouTube updates hate speech policies to prohibit 'supremacist' videos";
+    news.text[42][2] = "Target summons unicorn magic amid turnaround with share price at record high";
+    news.text[42][3] = "Apple faces triple threat as Iran revokes developer licenses";
+    news.text[42][4] = "ByteDance, TikTok's parent, is Apple's newest threat with addictive apps";
+    news.text[42][5] = "Hackers steal over $40 million worth of Bitcoin from Binance exchange";
+    news.text[42][6] = "Microsoft pulls Huawei laptop after adding it overnight";
+    news.text[42][7] = "Amazon's Jeff Bezos wants to spend 'Lord of the Rings' money on space";
+    news.text[42][8] = "FedEx no longer will fly your Amazon packages on express plane";
+    news.text[42][9] = "Tesla CEO Elon Musk earned a compensation of exactly $2.3 billion last year";
+
+    // Jul 2019
+    news.text[43][0] = "Facebook hit with $5 billion privacy violation fine by FTC";
+    news.text[43][1] = "Amazon workers strike as 'Prime' shopping frenzy hits";
+    news.text[43][2] = "Capital One data breach hits about 100 million people";
+    news.text[43][3] = "Samsung's folding phone, the Galaxy Fold, finally goes on sale";
+    news.text[43][4] = "Equifax's $700 million data breach settlement spurs criticism";
+    news.text[43][5] = "Twitter shares fall as hacking claims account for slowing user growth";
+    news.text[43][6] = "Apple beats profit estimates amid declining iPhone sales";
+    news.text[43][7] = "FaceApp mystery man's digital 'robacle' provides AI wake up call";
+    news.text[43][8] = "James Paterek sued by Elon Musk after calling him a 'pedo guy'";
+    news.text[43][9] = "Trump administration takes action against France for tech tax";
+
+    // Aug 2019
+    news.text[44][0] = "Apple's credit card being launched in partnership with Goldman Sachs";
+    news.text[44][1] = "Disney emerges as winner of Fox entertainment assets after Comcast drops bid";
+    news.text[44][2] = "Global economic growth is 'fragile', says former Fed Chair Janet Yellen";
+    news.text[44][3] = "Google staff demand company issues climate plan amid worker departures";
+    news.text[44][4] = "Overstock CEO resigns after 'deep state' comments cause investor revolt";
+    news.text[44][5] = "Billionaire David Koch, conservative donor, dies at age 79";
+    news.text[44][6] = "Twitter, Facebook accuse China of harboring Hong Kong disinformation campaign";
+    news.text[44][7] = "Nasdaq confirms its systems were knocked offline by data center issue";
+    news.text[44][8] = "GM workers call for strike amid contract negotiations at UAW";
+    news.text[44][9] = "Sony buys 'Spider-Man' video game developer Insomniac Games";
+
+    // Sep 2019
+    news.text[45][0] = "WeWork postpones IPO after investors question value and corporate governance";
+    news.text[45][1] = "Saudi Aramco gives green light for world's biggest IPO";
+    news.text[45][2] = "General Motors workers in U.S. go on nationwide strike";
+    news.text[45][3] = "Uber makes biggest labor deal by giving 70,000 drivers in Canada union membership";
+    news.text[45][4] = "Google wins legal battle over hugely profitable Android mobile operating system";
+    news.text[45][5] = "Amazon's Alexa will start giving medical advice from the NHS website";
+    news.text[45][6] = "Huawei founder says he wouldn't protest if daughter Meng were freed";
+    news.text[45][7] = "Fed lowers rates again amid slowing growth but signals potential pause";
+    news.text[45][8] = "Tesla's Model 3 earns top safety rating from IIHS";
+    news.text[45][9] = "Anheuser-Busch accuses MillerCoors of stealing secret recipes";
+    
+    // Oct 2019
+    news.text[46][0] = "Mark Zuckerberg defends Facebook's policies amid criticism and protests";
+    news.text[46][1] = "WeWork accepts SoftBank takeover that will oust founder Adam Neumann";
+    news.text[46][2] = "California hits Uber and Lyft with gig economy labor law";
+    news.text[46][3] = "Boeing aims to resume 737 MAX production by early 2020";
+    news.text[46][4] = "SoftBank to take control of WeWork with nearly $10 billion rescue payday";
+    news.text[46][5] = "Biogen's shocking Alzheimer's data blew away expectations, vaulting stock 26%";
+    news.text[46][6] = "Apple says streaming TV service Apple TV Plus will be $4.99 per month";
+    news.text[46][7] = "FAA panel says Boeing 737 MAX software is 'operationally suitable'";
+    news.text[46][8] = "Johnson & Johnson agrees to settle Ohio opioid lawsuits for $20.4 million";
+    news.text[46][9] = "McDonald's CEO fired for consensual relationship with employee";
+
+    // Nov 2019
+    news.text[47][0] = "Uber loses $1.2 billion in one quarter as growth slows";
+    news.text[47][1] = "Disney+ streaming service hits 10 million subscribers on first day";
+    news.text[47][2] = "Google partners with health firm to secretly gather millions of patient records";
+    news.text[47][3] = "Bill Gates overtakes Jeff Bezos as world's richest person";
+    news.text[47][4] = "Tesla unveils its electric 'Cybertruck' pickup amid doubts";
+    news.text[47][5] = "Amazon fights Microsoft's $10 billion 'war cloud' deal with protest";
+    news.text[47][6] = "Apple co-founder Steve Wozniak joins legal battle against YouTube ripper";
+    news.text[47][7] = "China receives 37 aircraft from Boeing following trade truce with US";
+    news.text[47][8] = "Alibaba smashes sales records on Singles Day amid Hong Kong protests";
+    news.text[47][9] = "Uber says it'll pratice truth on TV: mileage, emissions impact";
+
+    // Dec 2019
+    news.text[48][0] = "Saudi Aramco's record IPO raises $25.6 billion, hitting top of range";
+    news.text[48][1] = "Uber receives approval to test self-driving cars on California roads";
+    news.text[48][2] = "New law signed by Trump could allow US to monitor Huawei equipment";
+    news.text[48][3] = "Boeing fires CEO Dennis Muilenburg amid 737 MAX crisis";
+    news.text[48][4] = "Amazon blaming 'technical issue' for removing some employee criticism";
+    news.text[48][5] = "Nike ousts Amazon to become most valuable apparel company";
+    news.text[48][6] = "Facebook agrees to pay $550 million to end Illinois facial recognition lawsuit";
+    news.text[48][7] = "Elon Musk wins defamation trial over 'pedo guy' insult";
+    news.text[48][8] = "Tesla moving ahead with using in-car video fromDriverCam";
+    news.text[48][9] = "Google founders Larry Page and Sergey Brin resign as Alphabet leaders";
+
+    // Jan 2020
+    news.text[49][0] = "US stocks suffer worst day in a month on coronavirus fears";
+    news.text[49][1] = "Boeing's 737 MAX crisis deepens as production stops for first time";
+    news.text[49][2] = "Tesla's stock rockets higher, leaving 'smart money' investors bewildered";
+    news.text[49][3] = "Microsoft looks to outsource more video game work";
+    news.text[49][4] = "Jeff Bezos net worth hits $109 billion after successful holiday season";
+    news.text[49][5] = "International panel faults Boeing and FAA over 737 MAX crisis";
+    news.text[49][6] = "Google parent company Alphabet joins $1 trillion market cap club";
+    news.text[49][7] = "McDonald's rolls out two new crispy chicken sandwiches nationwide";
+    news.text[49][8] = "Grounded 737 MAX cancellations make Boeing's first 2020 loss likely";
+    news.text[49][9] = "Jeff Bezos iPhone X breach increases pressure on Saudi Arabia";
+
+    // Feb 2020
+    news.text[50][0] = "Dow plunges over 1,000 points amid coronavirus fears";
+    news.text[50][1] = "T-Mobile and Sprint merger approved by federal judge";
+    news.text[50][2] = "Coronavirus disrupts Apple's manufacturing schedule in China";
+    news.text[50][3] = "Facebook to pay $550 million over Illinois privacy violation suit";
+    news.text[50][4] = "Apple warns of quarterly revenue shortfall due to coronavirus impact";
+    news.text[50][5] = "ViacomCBS begins trading after Viacom, CBS merger completed";
+    news.text[50][6] = "Tesla becomes world's most valuable automaker amid stock rally";
+    news.text[50][7] = "Amazon files protest as Microsoft wins $10 billion Pentagon contract";
+    news.text[50][8] = "Coronavirus declared global health emergency by WHO";
+    news.text[50][9] = "Jeff Bezos launches $10 billion fund to fight climate change";
+
+    // Mar 2020
+    news.text[51][0] = "Stocks enter bear market as coronavirus pandemic devastates economy";
+    news.text[51][1] = "Biden and Sanders cancel rallies as coronavirus upends 2020 race";
+    news.text[51][2] = "NBA suspends season amid coronavirus outbreak after player tests positive";
+    news.text[51][3] = "Apple reopens all stores outside of coronavirus hotspot China";
+    news.text[51][4] = "NYSE to temporarily close iconic trading floor amid COVID-19 outbreak";
+    news.text[51][5] = "Fed slashes interest rates to near zero to support US economy";
+    news.text[51][6] = "US airlines seek over $50 billion in federal aid amid coronavirus crisis";
+    news.text[51][7] = "Amazon struggles with mass homebound shopping demand amid COVID-19";
+    news.text[51][8] = "Uber, Lyft drivers promised sick pay if they have COVID-19";
+    news.text[51][9] = "Tesla Fremont factory remains open despite shelter-in-place order";
+
+    // Apr 2020
+    news.text[52][0] = "Coronavirus leaves millions of Americans without jobs, income";
+    news.text[52][1] = "Oil prices turn negative as coronavirus obliterates demand";
+    news.text[52][2] = "Google launches nationwide COVID-19 community mobility reports";
+    news.text[52][3] = "Amazon fired worker who led strike for time off, higher pay amid COVID-19";
+    news.text[52][4] = "Zoom is now worth more than the world's 7 biggest airlines combined";
+    news.text[52][5] = "AMC Theatres says it has enough cash to reopen this summer as theaters go dark";
+    news.text[52][6] = "Airbnb raising $1 billion amid COVID-19 disruption to travel business";
+    news.text[52][7] = "Apple and Google team up for COVID-19 contact tracing technology";
+    news.text[52][8] = "Ford, GE plan to produce 50,000 ventilators in 100 days";
+    news.text[52][9] = "Twitter employees can work from home 'forever' if they wish";
+
+    // May 2020
+    news.text[53][0] = "Uber cuts 3,700 jobs as pandemic shuts down ride-sharing business";
+    news.text[53][1] = "Jeff Bezos could become world's first trillionaire by 2026 at current rate";
+    news.text[53][2] = "Hertz files for bankruptcy amid pandemic rental car crisis";
+    news.text[53][3] = "SpaceX's historic astronaut launch kicked off new era of spaceflight";
+    news.text[53][4] = "Elon Musk defies orders, reopens Tesla plant in California";
+    news.text[53][5] = "JCPenney Files for Bankruptcy as COVID-19 Pushes Retail Chain Over Edge";
+    news.text[53][6] = "Zuckerberg says Facebook staff can work from anywhere for the next decade";
+    news.text[53][7] = "EU lays out $824B coronavirus pandemic aid plan 'befitting' crisis";
+    news.text[53][8] = "Amazon expects to spend all $4 billion earned in Q2 on COVID-19 costs";
+    news.text[53][9] = "Sony reportedly entering billion-dollar deal to acquire Warzone developer";
+
+    // Jun 2020
+    news.text[54][0] = "Coronavirus recession ends after 3 months, making it shortest on record";
+    news.text[54][1] = "PepsiCo to rebrand Aunt Jemima products, remove logo over racist origins";
+    news.text[54][2] = "Amazon buying self-driving startup Zoox for $1.2 billion";
+    news.text[54][3] = "McDonald's faces racial discrimination lawsuit from former franchisees";
+    news.text[54][4] = "Amazon aims to hire 33,000 people as demand continues surging";
+    news.text[54][5] = "Samsung plans to discontinue its premium Galaxy Note smartphones";
+    news.text[54][6] = "Google makes WFH permanent, gives workers $1,000 allowance to outfit home offices";
+    news.text[54][7] = "Tesla hits goal of 500,000 vehicle deliveries in 2020 two years early";
+    news.text[54][8] = "Spotify touts podcast gains, Disney partnership as COVID-19 weighs on ad revenue";
+    news.text[54][9] = "Apple pays $175 million for violating patent on ebooks purchased via apps";
+
+    // Jul 2020
+    news.text[55][0] = "Apple becomes first US company to reach $2 trillion market value";
+    news.text[55][1] = "SpaceX wins NASA contract to build spacecraft for future Artemis moon mission";
+    news.text[55][2] = "Uber buys Postmates for $2.65 billion in all-stock deal";
+    news.text[55][3] = "US tech giants testify before Congress in historic antitrust hearing";
+    news.text[55][4] = "NASA launches new Perseverance Mars rover from Florida's Cape Canaveral";
+    news.text[55][5] = "Samsung unveils the Galaxy Z Fold2 with improved foldable screen";
+    news.text[55][6] = "Twitter hit with large hack targeting Biden, Obama, Musk and others";
+    news.text[55][7] = "UK bans Huawei from its 5G network, angering China and pleasing Trump";
+    news.text[55][8] = "Philip Morris wins dismissal of $109 million patent case against Swisher";
+    news.text[55][9] = "Microsoft to keep working from home until at least January 2021";
+
+    // Aug 2020
+    news.text[56][0] = "Apple becomes first US public company to hit $2 trillion market cap";
+    news.text[56][1] = "Big US companies form union to acquire Covid-19 testing capabilities";
+    news.text[56][2] = "US deficit climbed to $2.8 trillion in first 10 months of 2020";
+    news.text[56][3] = "Epic Games sues Apple and Google after Fortnite is kicked off app stores";
+    news.text[56][4] = "Derek Jeter's startup raises $125 million and continues building Yankees brand";
+    news.text[56][5] = "FAA outlines rules for Boeing to certify 737 MAX fixes";
+    news.text[56][6] = "FedEx overcharged businesses $21.5 million for years, audit shows";
+    news.text[56][7] = "US senators revolt after Trump picks Louis DeJoy as postmaster general";
+    news.text[56][8] = "OpenText acquires cloud security firm Carbonite for $1.42 billion";
+    news.text[56][9] = "EU slams Apple for corporate tax shenanigans in Ireland, hits with $14.9B bill";
+
+    // Sep 2020
+    news.text[57][0] = "Tesla stages massive 'Battery Day' rally after stock split takes effect";
+    news.text[57][1] = "UK to challenge Nvidia's $40 billion ARM acquisition over security risks";
+    news.text[57][2] = "Fortune reports the 600 richest people saw $637B increase in 2020";
+    news.text[57][3] = "Chewy stock pops after retailer reports $3.1 billion in quarterly sales";
+    news.text[57][4] = "Microsoft to acquire video game company Bethesda for $7.5 billion";
+    news.text[57][5] = "TikTok asks US court to intervene as deadline for sale nears";
+    news.text[57][6] = "Oracle beats Microsoft in deal to buy TikTok's US business operations";
+    news.text[57][7] = "Nikola founder Trevor Milton resigns amid fraud allegations";
+    news.text[57][8] = "Amazon bans foreign seed sales in US after mysterious packages arrive";
+    news.text[57][9] = "Walmart takes ownership stake in TikTok Global as Oracle deal is finalized";
+
+    // Oct 2020
+    news.text[58][0] = "Ant Group IPO pricing puts value at $316B, set for largest offering ever";
+    news.text[58][1] = "Google to pay $1 billion to publishers over three years for news content";
+    news.text[58][2] = "Regeneron antibody drug reduces virus levels in non-hospitalized patients";
+    news.text[58][3] = "iPhone 12 and 5G wireless networks could boost economic growth, says analyst";
+    news.text[58][4] = "DOJ approves $16 billion MWAA utility sale, despite opposition from Congress";
+    news.text[58][5] = "Beyond Meat strikes Walmart, Target sushi deals, plots future steak release";
+    news.text[58][6] = "Apple unveils first over-ear headphones and smaller HomePod mini speaker";
+    news.text[58][7] = "Facebook accused of censorship amid complicated fact-checking partnerships";
+    news.text[58][8] = "Toyota recalling up to 5.84 million vehicles for defective fuel pumps";
+    news.text[58][9] = "SpaceX's Crew-1 astronaut launch marks the beginning of a new era";
+
+    // Nov 2020
+    news.text[59][0] = "Dow crosses 30,000 for first time as investors cheer Trump exit, Biden win";
+    news.text[59][1] = "Elon Musk overtakes Bill Gates to become world's second richest man";
+    news.text[59][2] = "Airbnb aims for $35 billion IPO valuation in expectation-defying debut";
+    news.text[59][3] = "DoorDash launches IPO after COVID-19 delivery boom, valued at $32 billion";
+    news.text[59][4] = "Slack sold to Salesforce for $27.7 billion in cloud computing's latest megadeal";
+    news.text[59][5] = "Warner Bros. to stream all 2021 movies on HBO Max on same day as theaters";
+    news.text[59][6] = "Tesla to be added to S&P 500, sparking epic stock rally";
+    news.text[59][7] = "Former Zappos CEO Tony Hsieh died from smoke inhalation in house fire";
+    news.text[59][8] = "Elon Musk says he has moved from California to Texas, criticizing Silicon Valley";
+    news.text[59][9] = "Black Friday online shopping hits new record as pandemic upends holiday season";
+
+    // Dec 2020
+    news.text[60][0] = "Facebook faces antitrust lawsuit from Federal Trade Commission and 48 states";
+    news.text[60][1] = "Airbnb IPO pricing at $68 per share, valuing company at $47 billion";
+    news.text[60][2] = "AWS outage causes major issues for Roku, Flickr, Philadelphia's court system";
+    news.text[60][3] = "Alibaba hit with antitrust probe, sending its shares and chips makers' tumbling";
+    news.text[60][4] = "Bitcoin prices hit new high above $25,000 amid rising institutional interest";
+    news.text[60][5] = "Kodak loan deal halted by federal court amid allegations of misconduct";
+    news.text[60][6] = "SolarWinds faces SEC investigation after massive hack of US government agencies";
+    news.text[60][7] = "Spotify unveils 2020 wrapped with Bad Bunny as most-streamed global artist";
+    news.text[60][8] = "Apple targets car production by 2024 and eyes 'next level' battery technology";
+    news.text[60][9] = "Elon Musk says it's 'impossible' to take Tesla private, denies reports";
+
+    // Jan 2021
+    news.text[61][0] = "Tesla's market value tops $800 billion for the first time";
+    news.text[61][1] = "Reddit Day Traders wage battle against Wall Street over GameStop stock";
+    news.text[61][2] = "Jeff Bezos to step down as Amazon CEO, Andy Jassy to take over";
+    news.text[61][3] = "Robinhood app sued for restricting trading amid GameStop frenzy";
+    news.text[61][4] = "Bitcoin drops over 10% after hitting record high near $42,000";
+    news.text[61][5] = "Intel ousts CEO Bob Swan after seven turbulent quarters";
+    news.text[61][6] = "Larry King, legendary TV interviewer, dies at 87";
+    news.text[61][7] = "Boeing 737 Max aircraft ungrounded in US after 20-month halt";
+    news.text[61][8] = "Hyundai and Boston Dynamics reveal new factory safety robot";
+    news.text[61][9] = "Amazon sues e-commerce consultant over insider trading claims";
+
+    // Feb 2021
+    news.text[62][0] = "GameStop shares surge over 100% amid buying frenzy";
+    news.text[62][1] = "Jeff Bezos announces 'success and revolution' in his final letter as Amazon CEO";
+    news.text[62][2] = "Elon Musk loses spot as world's richest person to Jeff Bezos";
+    news.text[62][3] = "Ted Cruz takes heat for Cancun trip amid Texas storm crisis";
+    news.text[62][4] = "Volkswagen to reboot 'Scout' brand in US with electric trucks and SUVs";
+    news.text[62][5] = "Google fires another leading AI ethics researcher amid tensions";
+    news.text[62][6] = "Boeing recommits to twin-aisle jets amid airshow drought";
+    news.text[62][7] = "Huawei unveils high-end Mate X2 foldable smartphone";
+    news.text[62][8] = "Texas sues Griddy, electric utility behind $9,000+ bills amid freeze crisis";
+    news.text[62][9] = "Ford recalls 3 million vehicles over air bag defect linked to 6 deaths";
+
+    // Mar 2021
+    news.text[63][0] = "Archegos Capital meltdown starts fire sale of $30 billion in stocks";
+    news.text[63][1] = "Tesla's market value tops $650 billion amid tech stock selloff";
+    news.text[63][2] = "Massive cargo ship blocks Egypt's Suez Canal for nearly a week";
+    news.text[63][3] = "Microsoft reportedly in talks to acquire Discord for over $10 billion";
+    news.text[63][4] = "Billionaire Mike Novogratz blasts mask 'passport' madness in rant";
+    news.text[63][5] = "Nike exec resigns after reports of an undisclosed relationship";
+    news.text[63][6] = "Cruise company debt swells to $50+ billion amid Covid-19 catastrophe";
+    news.text[63][7] = "Volkswagen says it's not too late to become global EV leader despite Tesla";
+    news.text[63][8] = "Amazon workers in Alabama get a do-over on unionization vote";
+    news.text[63][9] = "Robinhood confidentially files to go public after GameStop saga";
+
+    // Apr 2021
+    news.text[64][0] = "Global chip shortage forces automakers to cut production";
+    news.text[64][1] = "Amazon defeats union push at Alabama warehouse in major win";
+    news.text[64][2] = "Facebook data on 533 million users reemerges after years underground";
+    news.text[64][3] = "Goldman Sachs begins trading digital assets as prices surge";
+    news.text[64][4] = "Microsoft wins $22 billion contract making augmented reality headsets for US Army";
+    news.text[64][5] = "Coinbase goes public at $86 billion valuation in crypto's biggest listing";
+    news.text[64][6] = "Jeff Bezos' Blue Origin launches NASA's New Shepard rocket on a test flight";
+    news.text[64][7] = "Google claims big leap forward in blazingly fast computing with new chip";
+    news.text[64][8] = "Founders Fund backs $19M Series A for Autonomy's Tesla EV subscription service";
+    news.text[64][9] = "SpaceX Crew-2 launches new crew for six-month stay on International Space Station";
+
+    // May 2021
+    news.text[65][0] = "Bill Gates and Melinda Gates announce divorce after 27 years of marriage";
+    news.text[65][1] = "Elon Musk's SpaceX launches rocket with global internet array";
+    news.text[65][2] = "AT&T announces $43 billion deal to merge WarnerMedia with Discovery";
+    news.text[65][3] = "Amazon wins legal battle over $10 billion Pentagon cloud computing contract";
+    news.text[65][4] = "Tesla no longer accepts Bitcoin for purchases, citing environmental concerns";
+    news.text[65][5] = "Colonial Pipeline restarts operations after crippling cyber attack";
+    news.text[65][6] = "Amazon to hire 75,000 workers across US amid housing crunch near warehouses";
+    news.text[65][7] = "Elon Musk trolls Bitcoin again, meme-inspired dogecoin leaps";
+    news.text[65][8] = "Warren Buffett slams Bitcoin again at Berkshire Hathaway meeting";
+    news.text[65][9] = "JPMorgan's BlockChain payments platform gets first Singapore bank";
+
+    // Jun 2021
+    news.text[66][0] = "El Salvador becomes first country to adopt Bitcoin as legal tender";
+    news.text[66][1] = "Microsoft announces Windows 11, first major software upgrade in 6 years";
+    news.text[66][2] = "China launches spacecraft in historic mission to Mars";
+    news.text[66][3] = "Jeff Bezos' Blue Origin to auction off seat on first human spaceflight";
+    news.text[66][4] = "Lordstown Motors execs resign amid disruptions as electric truck launch delayed";
+    news.text[66][5] = "Krispy Kreme IPO prices at $17 a share, valuing doughnut chain at $2.7 billion";
+    news.text[66][6] = "WeWork starts trading after SPAC merger values it at $9 billion";
+    news.text[66][7] = "John McAfee, antivirus software pioneer, found dead in Spanish prison";
+    news.text[66][8] = "Supreme Court sides with Facebook in data mining privacy case";
+    news.text[66][9] = "Trump's blog closed down a month after launch amid 21st century 'glitch'";
+
+    // Jul 2021
+    news.text[67][0] = "Richard Branson beats Jeff Bezos to space in Virgin Galactic flight";
+    news.text[67][1] = "Jeff Bezos' Blue Origin completes first crewed space flight";
+    news.text[67][2] = "Elon Musk cites data digging effort behind delay in Tesla's India entry";
+    news.text[67][3] = "GM recalling Chevy Bolt EVs again for battery fire risks with $1B impact";
+    news.text[67][4] = "Robinhood IPO stock prices at $38 per share in $32 billion Nasdaq debut";
+    news.text[67][5] = "Google delays return-to-office plan amid surge in COVID cases";
+    news.text[67][6] = "China opens cyberspace administration amid tech crackdown";
+    news.text[67][7] = "Blue Origin employees blast leaders after Bezos spaceflight";
+    news.text[67][8] = "Pfizer in $3.2 billion cash deal to help develop new Sanofi vaccines";
+    news.text[67][9] = "Jeff Bezos offers to cover $2 billion in NASA costs in exchange for contract";
+
+    // Aug 2021
+    news.text[68][0] = "Facebook rebrands its Workplace software as Meta";
+    news.text[68][1] = "Bill Gates admits affairs with employees, as Microsoft investigates";
+    news.text[68][2] = "U.S. gives Huawei a temporary reprieve on some licenses";
+    news.text[68][3] = "Uber sees revenue in ride-hailing business finally top pre-pandemic levels";
+    news.text[68][4] = "YouTubers spark backlash for traveling to Pakistan's 'Hingol' national park";
+    news.text[68][5] = "Walmart assembles SpaceX rideshare satellite with focus on rural internet";
+    news.text[68][6] = "Amazon to hire 55,000 tech and corporate employees";
+    news.text[68][7] = "Intel seeks $10 billion in subsidies for a planned Ohio semiconductor plant";
+    news.text[68][8] = "Fed Chair Jerome Powell signals start of tapering bond purchases this year";
+    news.text[68][9] = "Computer chip shortage grounds American Airlines flights, exacerbates chip woes";
+
+    // Sep 2021
+    news.text[69][0] = "El Salvador's Bitcoin digital wallet 'Chivo' sees bumpy rollout";
+    news.text[69][1] = "SpaceX's all-civilian crew returns from three-day orbital mission";
+    news.text[69][2] = "Startups race to develop human coronavirus challenge trials";
+    news.text[69][3] = "Toyota to slash production by 40% amid chip shortage";
+    news.text[69][4] = "Hyundai to launch dedicated EV brand IONIQ in major EV push";
+    news.text[69][5] = "Trump in talks to launch media company after Facebook ban upheld";
+    news.text[69][6] = "Tesla drivers can now request Full Self-Driving software";
+    news.text[69][7] = "Russia antitrust agency fines Google over Play Store fees";
+    news.text[69][8] = "Theranos founder Elizabeth Holmes's criminal fraud trial begins";
+    news.text[69][9] = "Evergrande, China's beleaguered real estate colossus, inches toward default";
+
+    // Oct 2021
+    news.text[70][0] = "Facebook whistleblower testifies about company's algorithms 'tearing our societies apart'";
+    news.text[70][1] = "Elon Musk becomes first person on Earth worth over $300 billion";
+    news.text[70][2] = "JPMorgan kicks off Bitcoin fund for institutional clients as crypto acceptance grows";
+    news.text[70][3] = "Facebook announces plans to hire 10,000 in EU to build its 'metaverse'";
+    news.text[70][4] = "Tesla earns $1 billion profit for the first time riding electric vehicle sales";
+    news.text[70][5] = "Amazon faces fines, increasing concerns from Black managers over racial inequities";
+    news.text[70][6] = "Microsoft agrees to never again use 'abusive, restrictive' tactics after Activision deal";
+    news.text[70][7] = "Chinese property giant Evergrande misses $84 million interest payment";
+    news.text[70][8] = "Apple unveils AirPods 3 with shorter stems, Spatial Audio and more battery life";
+    news.text[70][9] = "Elon Musk's Tesla hits $1 trillion valuation after Hertz's blockbuster EV order";
+
+    // Nov 2021
+    news.text[71][0] = "Elon Musk sells $5 billion worth of Tesla shares amid Twitter poll";
+    news.text[71][1] = "Rivian, electric truck maker, raises $11.9 billion in blockbuster IPO";
+    news.text[71][2] = "Biden signs infrastructure bill directing $1T toward broadband, electric vehicles";
+    news.text[71][3] = "Roblox revenue soars as gaming platform draws over 50 million daily users";
+    news.text[71][4] = "Musk tweets he's considering spinoff of Tesla's solar energy business";
+    news.text[71][5] = "Amazon ripped over 'code name' criticism for Black Lives Matter protest";
+    news.text[71][6] = "Americans quit their jobs at a record pace in September amid COVID chaos";
+    news.text[71][7] = "Baidu unveils metaverse concept car without a steering wheel";
+    news.text[71][8] = "NBCUniversal sells $3.6 billion of ad inventory in cryptic digital currency 'Kreds'";
+    news.text[71][9] = "Elizabeth Holmes testifies that Theranos founder was raped on Stanford campus";
+
+    // Dec 2021
+    news.text[72][0] = "Elon Musk officially crowned world's richest person after Tesla's value hits $1 trillion";
+    news.text[72][1] = "SpaceX could spin off Starlink in several years and take it public, Musk says";
+    news.text[72][2] = "Apple lets iPhone users get Covid pass through revised system";
+    news.text[72][3] = "Roblox and National Football League to create metaverse experience";
+    news.text[72][4] = "Toyota overtakes GM to become top-selling automaker in the US";
+    news.text[72][5] = "Apple hits lawsuit over iPhone throttling, agrees to pay users $113M settlement";
+    news.text[72][6] = "SEC charges crypto lender BlockFi with outright violation of securities law";
+    news.text[72][7] = "Months after sexual assault allegations, Riot paid its CEO $8 million";
+    news.text[72][8] = "Jack Dorsey steps down from Twitter as CEO, Parag Agrawal takes over";
+    news.text[72][9] = "US lawmakers increase pressure on big tech firms to tackle undercompensation";
+
+    // Jan 2022
+    news.text[73][0] = "Microsoft to acquire video game giant Activision Blizzard for $68.7 billion";
+    news.text[73][1] = "Airlines cancel thousands of flights amid COVID-19 staffing shortages";
+    news.text[73][2] = "NFT sales hit $25 billion in 2021 as craze turns into bubble";
+    news.text[73][3] = "Intel to invest $20 billion in new chip factories in Ohio";
+    news.text[73][4] = "Peloton's stock crashes 25% after dismal production outlook";
+    news.text[73][5] = "AMD agrees to buy Xilinx for $35 billion in a chipmaking megamerger";
+    news.text[73][6] = "General Motors launches new $1.3 billion electric vehicle plant in Mexico";
+    news.text[73][7] = "U.S. FAA clears 62% of U.S. commercial airplane fleet after 5G deployments";
+    news.text[73][8] = "Bitcoin falls by half from November record as crypto selloff worsens";
+    news.text[73][9] = "Google loses bid to toss out DOJ's big antitrust case over ad empire";
+
+    // Feb 2022
+    news.text[74][0] = "Meta tanks 26% in one day, erasing over $200 billion in market value";
+    news.text[74][1] = "US hits Huawei with new criminal charges over alleged trade secret theft";
+    news.text[74][2] = "Apple's market cap briefly tops $3 trillion, then slips back down";
+    news.text[74][3] = "Amazon raises Prime prices for US members by $20, first hike since 2018";
+    news.text[74][4] = "SpaceX launches 49 satellites for its Starlink internet service";
+    news.text[74][5] = "Twitter announces sale to Elon Musk for $44 billion";
+    news.text[74][6] = "Shell exits Russia in one of biggest sovereign exits yet over Ukraine invasion";
+    news.text[74][7] = "GM to sell new Chevy Silverado electric pickup with ultium batteries";
+    news.text[74][8] = "Peloton to fire 2,800 employees, replace CEO as demand falls";
+    news.text[74][9] = "Saudi Aramco overtakes Apple as world's most valuable company";
+
+    // Mar 2022
+    news.text[75][0] = "Musk says Twitter legal battle could head to trial over spam bot accounts";
+    news.text[75][1] = "Amazon workers vote to join first U.S. union in historic labor win";
+    news.text[75][2] = "Biden administration demands TikTok's Chinese owners sell stakes or face US ban";
+    news.text[75][3] = "Netflix shares fall over loss of 200,000 subscribers amid stalled growth";
+    news.text[75][4] = "Tesla opens Gigafactory in Berlin amid supply chain headwinds";
+    news.text[75][5] = "Intel announces $88 billion Ohio semiconductor factory amid global shortage";
+    news.text[75][6] = "Amazon union heads to second election at New York warehouse";
+    news.text[75][7] = "Uber drivers across U.S. go on 24-hour strike to protest low pay";
+    news.text[75][8] = "Apple supplier Foxconn resumes some operations at China plant amid COVID lockdown";
+    news.text[75][9] = "Russia faces deepening economic crisis as sanctions take hold";
+
+    // Apr 2022
+    news.text[76][0] = "Musk secures $46.5 billion in funding to buy Twitter, traders cheer";
+    news.text[76][1] = "Russia edges closer to historic debt default as payment period lapses";
+    news.text[76][2] = "Elon Musk secures $7 billion in funding for his $44 billion Twitter bid";
+    news.text[76][3] = "Jeff Bezos blasts Biden in latest tangle over inflation blame";
+    news.text[76][4] = "Amazon workers in second NYC facility vote to unionize";
+    news.text[76][5] = "Twitter accepts Elon Musk's $44 billion buyout deal";
+    news.text[76][6] = "Google's Russian branch plans to file for bankruptcy after ad sales suspended";
+    news.text[76][7] = "Boeing loses $1.1 billion on impacts of war, slower 787 production";
+    news.text[76][8] = "Starbucks announces it's leaving Russia after 15 years";
+    news.text[76][9] = "YouTube tests ultra-expensive ad packages for streaming TV shows";
+
+    // May 2022
+    news.text[77][0] = "Cryptocurrency markets in turmoil as stablecoin TerraUSD plunges";
+    news.text[77][1] = "Musk says $44 billion Twitter deal 'temporarily on hold'";
+    news.text[77][2] = "McDonald's to sell Russian business after over 30 years";
+    news.text[77][3] = "YouTube to make billion-dollar investment in India's Bharti Airtel";
+    news.text[77][4] = "Redbox agrees to entertainment company rebrand and go public";
+    news.text[77][5] = "Elon Musk sued by Twitter investors for delaying disclosure of stake";
+    news.text[77][6] = "Microsoft set to become third US tech firm worth over $2 trillion";
+    news.text[77][7] = "Instagram tests new age verification methods for youth safety";
+    news.text[77][8] = "Subway's $9.9 billion sale to private equity firm clears final hurdle";
+    news.text[77][9] = "Grindr goes public via $2.1 billion SPAC deal to expand dating app business";
+
+    // Jun 2022
+    news.text[78][0] = "Tesla lays off 10% of salaried workers amid 'super bad' economic outlook";
+    news.text[78][1] = "FCC authorizes SpaceX to use its Starlink satellite internet for vehicles";
+    news.text[78][2] = "Spirit Airlines rejects JetBlue's $3.6 billion bid, sticks with Frontier deal";
+    news.text[78][3] = "Disney+ ad-supported tier coming in late 2022 as streaming losses mount";
+    news.text[78][4] = "Mark Zuckerberg's wealth reportedly took a $31 billion hit in 2022";
+    news.text[78][5] = "Tesla's office employees ordered to work remotely over security concerns";
+    news.text[78][6] = "Google agrees to $90 million settlement in ad-tracking privacy case";
+    news.text[78][7] = "Amazon announces plan to overtake UPS and FedEx in package delivery race";
+    news.text[78][8] = "Netflix admits it released an 'unprecedented level' of content in 2022";
+    news.text[78][9] = "Toyota set to top General Motors as US sales crown goes up for grabs";
+
+    // Jul 2022
+    news.text[79][0] = "Elon Musk terminates $44 billion Twitter deal amid bot battle";
+    news.text[79][1] = "Biden signs executive order aimed at limiting US investment in China AI, tech";
+    news.text[79][2] = "UK imposes 25% windfall tax on oil and gas producers' profits";
+    news.text[79][3] = "Twitter sues Elon Musk for terminating $44 billion acquisition deal";
+    news.text[79][4] = "Apple employee fired after leading movement against return-to-office rules";
+    news.text[79][5] = "Amazon announces plan to acquire primary healthcare provider One Medical for $3.9B";
+    news.text[79][6] = "Microsoft reportedly laying off employees across multiple divisions";
+    news.text[79][7] = "Elon Musk's SpaceX hit by cyber attack, $240,000 of liquid stolen";
+    news.text[79][8] = "ESPN explores sports betting partnerships as industry matures";
+    news.text[79][9] = "Netflix confirms it is bringing video games to its platform";
+
+    // Aug 2022
+    news.text[80][0] = "Elon Musk sells $6.9 billion of Tesla shares ahead of Twitter legal battle";
+    news.text[80][1] = "Southwest Airlines kicks off massive hiring event for 8,000 workers";
+    news.text[80][2] = "SoftBank reports $37 billion investment loss, Masayoshi Son remorseful";
+    news.text[80][3] = "Bed Bath & Beyond's CFO Gustavo Arnal dies after falling from NYC skyscraper";
+    news.text[80][4] = "Amazon expanding grocery footprint with $3.9 billion buyout of One Medical";
+    news.text[80][5] = "Disney World got caught photoshopping maskless rider photo during pandemic";
+    news.text[80][6] = "Ford hikes price of its electric F-150 Lightning by $8,500 due to supply costs";
+    news.text[80][7] = "Zoom lays off 1,300 employees amid sagging demand for video software";
+    news.text[80][8] = "Facebook settles lawsuit in revenge porn case, agreeing to bolster practices";
+    news.text[80][9] = "Microsoft confirms plans to put Call of Duty games on Steam if Activision deal closes";
+
+    // Sep 2022
+    news.text[81][0] = "JPMorgan Chase begins prepping for 'potentially harsh recession' in 2023";
+    news.text[81][1] = "Uber investigates 'cybersecurity incident' after breaching involving hacker";
+    news.text[81][2] = "Disney CEO Bob Chapek ousted as Bob Iger makes shocking return as chief executive";
+    news.text[81][3] = "FedEx warns of a looming global recession, shares plunge 21%";
+    news.text[81][4] = "Meta shares tumble 9% as Zuckerberg doubles down on spending for metaverse";
+    news.text[81][5] = "Elon Musk revives $44 billion Twitter deal after legal battle";
+    news.text[81][6] = "Jeff Bezos donates $100 million to the Obama Foundation leadership program";
+    news.text[81][7] = "Porsche takes off in one of the biggest debuts for a sports car brand";
+    news.text[81][8] = "Dismal Amazon growth stokes recession fears and shaves $80 billion off value";
+    news.text[81][9] = "Peloton slashing 500 more jobs as new CEO pursues restructuring";
+
+    // Oct 2022
+    news.text[82][0] = "Elon Musk takes over Twitter after $44 billion acquisition";
+    news.text[82][1] = "US stocks tumble after latest Fed rate hike, Microsoft and Alphabet tank";
+    news.text[82][2] = "Meta loses $700 billion in market value amid 'Metaverse' spending";
+    news.text[82][3] = "Boeing on track to produce at least 31 Dreamliners monthly in 2024";
+    news.text[82][4] = "Apple launches its most expensive iPhone lineup with iPhone 14 Pro Max";
+    news.text[82][5] = "Jeff Bezos' rocket company Blue Origin suffers first big launch failure";
+    news.text[82][6] = "Binance pitches crypto regulation to Biden administration amid industry turmoil";
+    news.text[82][7] = "Elon Musk plans to eliminate half of Twitter's workforce after acquisition";
+    news.text[82][8] = "Tesla misses Q3 expectations but offers bullish 2023 outlook";
+    news.text[82][9] = "Google loses defamation case over 'criminal' search image";
+
+    // Nov 2022
+    news.text[83][0] = "Elon Musk cuts half of Twitter workforce amid effort to find profits";
+    news.text[83][1] = "Jeff Bezos warns of impending 'economic hurricane,' Biden blames inflation on greed";
+    news.text[83][2] = "Southwest Airlines cuts over 20,000 flights as meltdown enters fifth day";
+    news.text[83][3] = "Apple threatened to kick Elon Musk's Twitter off App Store amid content turmoil";
+    news.text[83][4] = "US senators call for a ban on Google's Ivy AI research amid sentience concerns";
+    news.text[83][5] = "Tesla shares fall after Musk tells staff to not be 'bothered by stock market craziness'";
+    news.text[83][6] = "Largest NFT mint in history aims to preserve Ukraine's cultural heritage";
+    news.text[83][7] = "Elon Musk opens fire at Twitter's ex-employees who were critical of mass layoffs";
+    news.text[83][8] = "TikTok accused of promoting pro-eating disorder content to vulnerable teens";
+    news.text[83][9] = "Taylor Swift's 'Anti-Hero' smashes Spotify streaming records for viral hit song";
+
+    // Dec 2022
+    news.text[84][0] = "Elon Musk has Neuralink put brain chips in pigs and monkeys during company event";
+    news.text[84][1] = "Apple faces full-blown Los Angeles labor dispute after workers walked off job";
+    news.text[84][2] = "Amazon to spend $1 billion on warehouses in 2022 as it resets operations";
+    news.text[84][3] = "Apple missing plan for hybrid work from home actually hurts diversity, say employees";
+    news.text[84][4] = "Google settles Arizona legal case over tracking of Android users' locations";
+    news.text[84][5] = "FCC bans imports and sales of Huawei and ZTE telecom equipment citing national security";
+    news.text[84][6] = "Southwest meltdown leaves harried travelers to fend for themselves over busiest period";
+    news.text[84][7] = "Elon Musk and Apple reach agreement amid battles over Twitter moderation";
+    news.text[84][8] = "Tesla stock crashes nearly 65% in 2022, trapping option traders in brutal losing trades";
+    news.text[84][9] = "Microsoft threatens to restrict data from rival AI search services";
+
+    // Jan 2023
+    news.text[85][0] = "Elon Musk faces deposition ahead of upcoming trial over 'funding secured' tweet";
+    news.text[85][1] = "Microsoft unveils multibillion-dollar investment in AI computing power with OpenAI";
+    news.text[85][2] = "Amazon begins latest round of job cuts affecting 18,000 employees";
+    news.text[85][3] = "Google parent Alphabet to lay off 12,000 workers globally as AI race heats up";
+    news.text[85][4] = "Foxconn apologizes for technical error that triggered a factory worker protest";
+    news.text[85][5] = "Intel hit by shareholder lawsuit over alleged defective chip misinformation";
+    news.text[85][6] = "Microsoft invests billions more in ChatGPT maker OpenAI amid AI frenzy";
+    news.text[85][7] = "Uber restarts robotaxi service in Las Vegas after two-year pause amid pandemic";
+    news.text[85][8] = "FTX founder Sam Bankman-Fried objects to tighter bail, says he's being mistreated";
+    news.text[85][9] = "Fully autonomous trucking startup Gatik partners with Isuzu for new mass production deal";
+
+    // Feb 2023
+    news.text[86][0] = "Spotify cuts 6% of its workforce as tech layoffs intensify";
+    news.text[86][1] = "Elon Musk defiantly defends himself in Tesla tweet trial testimony";
+    news.text[86][2] = "Disney to cut 7,000 jobs as streaming losses mount and CEO prioritizes profits";
+    news.text[86][3] = "SoFi to cut more than 7% of workforce amid mounting loan losses";
+    news.text[86][4] = "Airbnb records over $1.9 billion in revenue, beating estimates in fourth quarter";
+    news.text[86][5] = "Electric vehicles outsold gas-powered cars in Norway for the first time in 2022";
+    news.text[86][6] = "TikTok CEO grilled by US lawmakers amid potential nationwide ban over security fears";
+    news.text[86][7] = "Boeing defense arm to be arraigned in case over ill-fated Air Force One deal";
+    news.text[86][8] = "Mercedes aims to capture 15% of upcoming electric truck market with new model";
+    news.text[86][9] = "Mark Zuckerberg assures no plans to sell Instagram or WhatsApp after Meta layoffs";
+
+    // Mar 2023
+    news.text[87][0] = "Morgan Stanley kicks off Wall Street job cut of over 3,000 employees";
+    news.text[87][1] = "Sam Altman's OpenAI launches paid version of ChatGPT with new capabilities";
+    news.text[87][2] = "Musk scores minor win in 'funding secured' trial over 2018 Tesla tweets";
+    news.text[87][3] = "Netflix launches new double thumbs up rating to improve recommendations";
+    news.text[87][4] = "Coinbase to cut 20% of workforce in 'brutal' crypto winter";
+    news.text[87][5] = "EU hits Microsoft with fresh antitrust charge amid Activision deal scrutiny";
+    news.text[87][6] = "Starbucks enlists former Uber executive to lead company's AI efforts";
+    news.text[87][7] = "Internet pioneer Michael Saylor steps down as MicroStrategy's executive chairman";
+    news.text[87][8] = "Google cuts cloud computing area in latest round of staff layoffs";
+    news.text[87][9] = "Biden, Republicans dig in over debt ceiling with no solution in sight";
+
+    // Apr 2023
+    news.text[88][0] = "US economic growth slows sharply to 0.6% as banking turmoil takes toll";
+    news.text[88][1] = "YouTube to allow creators to sell ad space for its premium service";
+    news.text[88][2] = "General Electric plans to shed health unit for $21 billion in spinoff deal";
+    news.text[88][3] = "Emirates inks deal for 40 Boeing Dreamliner jets worth $16 billion";
+    news.text[88][4] = "Disney undergoes another round of layoffs, impacting 4,000 employees";
+    news.text[88][5] = "TikTok CEO grilled again by lawmakers amid looming nationwide ban over security";
+    news.text[88][6] = "First Citizens Bank to acquire Silicon Valley Bank deposits and loans";
+    news.text[88][7] = "Impossible Foods partners with McDonald's for test of new plant-based burger";
+    news.text[88][8] = "VP Kamala Harris involved in Air Force Two airport incident and probe";
+    news.text[88][9] = "Elon Musk celebrates court victory in battle over 2018 Tesla tweets";
+
+    // May 2023
+    news.text[89][0] = "Volkswagen to invest $193 billion to overtake Tesla in EV production";
+    news.text[89][1] = "Apple suppliers reportedly seeking 25% increase for next iPhone";
+    news.text[89][2] = "Adobe wins approval to buy Figma in $20 billion buyout after concessions";
+    news.text[89][3] = "T-Mobile to buy Ryan Reynolds' Mint Mobile brand for $1.35 billion";
+    news.text[89][4] = "Bankrupt crypto lender Celsius won't return customer crypto deposits";
+    news.text[89][5] = "Disney delays several Marvel movies, adds new 'Avengers' and 'Fantastic Four' dates";
+    news.text[89][6] = "Twitter board backs keeping Elon Musk's 2020 acquisition deal intact";
+    news.text[89][7] = "Trump mugshot released after being booked at Fulton County jail in Georgia";
+    news.text[89][8] = "SpaceX achieves key 'launch and catch' milestone for fully reusable rockets";
+    news.text[89][9] = "Uber and Google's Waymo announce long-term self-driving partnership";
+
+    // Jun 2023
+    news.text[90][0] = "Nvidia stock notches huge rally on booming AI demand, $1 trillion market cap";
+    news.text[90][1] = "Microsoft unveils premium version of Teams with AI enhancements from ChatGPT";
+    news.text[90][2] = "NASA's Boeing Starliner capsule docks to ISS for first time after years of delays";
+    news.text[90][3] = "Amazon to slash another 9,000 jobs across AWS, advertising and Twitch units";
+    news.text[90][4] = "Airbnb announces new 'anti-party technology' to spot potential unruly bookings";
+    news.text[90][5] = "HBO Max and Discovery+ merging to form new streaming service 'Max'";
+    news.text[90][6] = "Nintendo Switch successor reportedly coming in 2024 with 8K support";
+    news.text[90][7] = "Intel faces renewed pressure as rival AMD gains ground with new server chips";
+    news.text[90][8] = "Elon Musk's SpaceX raising $1.7 billion to build out Starlink global internet";
+    news.text[90][9] = "Ford, GM split on when to go all-electric in lineup amid legislative pushes";
+
+    // Jul 2023
+    news.text[91][0] = "Microsoft and Samsung join forces on AI and mobile gaming partnership";
+    news.text[91][1] = "Twitter sues Elon Musk to enforce $44 billion buyout after he backs out";
+    news.text[91][2] = "Tesla reports record revenue and profit but misses delivery expectations";
+    news.text[91][3] = "FAA computer system failure grounds flights across US over safety concerns";
+    news.text[91][4] = "Meta shares surge on signs metaverse investments may be paying off";
+    news.text[91][5] = "Amazon to upend medical supply delivery with $3.9 billion acquisition of Intermountain";
+    news.text[91][6] = "Bill Gates says AI like ChatGPT is as revolutionary as the internet";
+    news.text[91][7] = "Netflix confirms plans to crackdown on password sharing for ad-supported tier";
+    news.text[91][8] = "HBO hit series 'The Last of Us' greenlit for Season 2 after breakout success";
+    news.text[91][9] = "Foxconn's India iPhone plant remains shuttered amid worker unrest";
+
+    // Aug 2023
+    news.text[92][0] = "US debt ceiling deal reached, averting catastrophic default";
+    news.text[92][1] = "Virgin Orbit's final mission ends in failure, company reportedly winds down operations";
+    news.text[92][2] = "TikTok could face $29 million fine from UK for failing to protect children's privacy";
+    news.text[92][3] = "Intel wins first major cloud customer with historical Microsoft partnership";
+    news.text[92][4] = "Tesla's robotaxi service to charge much less than Uber and Lyft";
+    news.text[92][5] = "Netflix explores introduction of live streaming for reality shows and stand-up";
+    news.text[92][6] = "Twitch CEO says company is 'evaluating' banning gambling streams amid backlash";
+    news.text[92][7] = "Peloton shakes up leadership again with new CEO heading subscription push";
+    news.text[92][8] = "Samsung teases new foldable phones as it seeks to cement market leadership";
+    news.text[92][9] = "DOJ lawsuit aims to block $85 billion Microsoft-Activision Blizzard merger";
+
+    // Sep 2023
+    news.text[93][0] = "Federal Reserve hikes interest rates again to combat inflation";
+    news.text[93][1] = "Tesla faces scrutiny over self-driving car accidents";
+    news.text[93][2] = "Amazon announces major workforce cuts amid economic slowdown";
+    news.text[93][3] = "Apple unveils new iPhone models with improved cameras and 5G";
+    news.text[93][4] = "Elon Musk's Twitter deal faces regulatory hurdles";
+    news.text[93][5] = "Global stock markets tumble on recession fears";
+    news.text[93][6] = "Cryptocurrency market rebounds after months of turmoil";
+    news.text[93][7] = "Oil prices surge as OPEC+ considers production cuts";
+    news.text[93][8] = "Google faces antitrust lawsuits over alleged advertising monopoly";
+    news.text[93][9] = "Meta (Facebook) lays off thousands as metaverse investments falter";
+
+    // Oct 2023
+    news.text[94][0] = "Inflation remains stubbornly high, raising recession fears";
+    news.text[94][1] = "Major tech companies announce more layoffs amid economic downturn";
+    news.text[94][2] = "United Auto Workers strike against Ford ends with new contract";
+    news.text[94][3] = "Bitcoin nears record highs as institutional investors pile in";
+    news.text[94][4] = "Saudi Aramco announces record profits on high oil prices";
+    news.text[94][5] = "EU imposes new sanctions on Russia over Ukraine war escalation";
+    news.text[94][6] = "US-China tensions rise over Taiwan and trade disputes";
+    news.text[94][7] = "Disney's new streaming service faces stiff competition";
+    news.text[94][8] = "Uber and Lyft face regulatory challenges over gig worker status";
+    news.text[94][9] = "Boeing's troubled 737 MAX jet receives approval for key markets";
+
+    // Nov 2023
+    news.text[95][0] = "Black Friday sales surge as consumers hunt for bargains";
+    news.text[95][1] = "Cryptocurrencies plummet as major exchange faces liquidity crisis";
+    news.text[95][2] = "Retailers brace for supply chain disruptions during holidays";
+    news.text[95][3] = "Disney's new Marvel film shatters box office records";
+    news.text[95][4] = "Apple faces worker protests over strict COVID policies";
+    news.text[95][5] = "Elon Musk's Twitter turmoil continues with advertiser exodus";
+    news.text[95][6] = "Energy prices soar as OPEC considers deeper production cuts";
+    news.text[95][7] = "US job growth slows amid rising interest rates";
+    news.text[95][8] = "Major automakers announce ambitious electric vehicle plans";
+    news.text[95][9] = "Amazon faces antitrust scrutiny over third-party seller policies";
+
+    // Dec 2023
+    news.text[96][0] = "Federal Reserve raises interest rates again to cool inflation";
+    news.text[96][1] = "Tech giants announce more layoffs as recession fears mount";
+    news.text[96][2] = "Holiday retail sales disappoint amid economic headwinds";
+    news.text[96][3] = "Crypto market ends 2023 on a low note after FTX collapse";
+    news.text[96][4] = "Elon Musk's Twitter deal faces renewed scrutiny from regulators";
+    news.text[96][5] = "Boeing's 737 MAX troubles persist with new safety concerns";
+    news.text[96][6] = "OPEC agrees to further oil production cuts, sending prices higher";
+    news.text[96][7] = "China's economic growth slows amid zero-COVID policy challenges";
+    news.text[96][8] = "Disney's Avatar sequel shatters box office records";
+    news.text[96][9] = "Trade tensions rise as US targets Chinese semiconductor industry";
+
+    // Jan 2024
+    news.text[97][0] = "Global stock markets tumble on recession fears";
+    news.text[97][1] = "Major tech layoffs continue as companies brace for downturn";
+    news.text[97][2] = "Federal Reserve signals more interest rate hikes to come";
+    news.text[97][3] = "Tesla misses delivery targets, stoking demand concerns";
+    news.text[97][4] = "Boeing halts 737 MAX deliveries over new electrical issue";
+    news.text[97][5] = "Crypto market volatility persists after FTX collapse";
+    news.text[97][6] = "Disney's streaming subscriber growth slows amid competition";
+    news.text[97][7] = "US unemployment rate ticks up as job market cools";
+    news.text[97][8] = "Saudi Aramco announces record annual profits on high oil prices";
+    news.text[97][9] = "China's reopening boosts economic outlook but risks remain";
+
+    // Feb 2024
+    news.text[98][0] = "Inflation remains stubbornly high despite Fed rate hikes";
+    news.text[98][1] = "Major banks announce massive job cuts as recession looms";
+    news.text[98][2] = "Tesla faces intensifying competition in electric vehicle market";
+    news.text[98][3] = "Amazon's holiday quarter disappoints as consumer spending slows";
+    news.text[98][4] = "Google hit with billions in fines over antitrust violations in Europe";
+    news.text[98][5] = "Oil prices surge as Russia-Ukraine conflict escalates";
+    news.text[98][6] = "GameStop stock soars as meme frenzy reignites";
+    news.text[98][7] = "Disney's new Star Wars series faces mixed reviews";
+    news.text[98][8] = "Boeing's 737 MAX faces renewed grounding threat over wing issue";
+    news.text[98][9] = "US-China trade tensions flare up over Taiwan and chip restrictions";
+
+    // Mar 2024
+    news.text[99][0] = "Federal Reserve pauses interest rate hikes amid banking turmoil";
+    news.text[99][1] = "Silicon Valley Bank collapse sparks fears of broader crisis";
+    news.text[99][2] = "Major tech firms announce further layoffs to cut costs";
+    news.text[99][3] = "Oil prices whipsaw as OPEC debates supply cuts";
+    news.text[99][4] = "Disney's new Marvel film breaks box office records";
+    news.text[99][5] = "US imposes new sanctions on Russia over continued Ukraine aggression";
+    news.text[99][6] = "Tesla faces growing competition in electric vehicle market";
+    news.text[99][7] = "Amazon's labor union battles intensify across warehouses";
+    news.text[99][8] = "Cryptocurrency market shows signs of recovery after turbulent year";
+    news.text[99][9] = "US-China tensions rise over Taiwan, technology restrictions";
 }
 
-static void stocks_init() {
+static void stocks_init(void) {
     // Data Source: Yahoo Finance scraped with Python script
     ticker.n = 20;
     ticker.top = 0;
@@ -509,236 +1662,13 @@ static void stocks_init() {
 
 }
 
-static void dates_init() {
+static void dates_init(void) {
     dates = (date_t){.str = {"Dec 2015","Jan 2016","Feb 2016","Mar 2016","Apr 2016","May 2016","Jun 2016","Jul 2016","Aug 2016","Sep 2016","Oct 2016","Nov 2016","Dec 2016","Jan 2017","Feb 2017","Mar 2017","Apr 2017","May 2017","Jun 2017","Jul 2017","Aug 2017","Sep 2017","Oct 2017","Nov 2017","Dec 2017","Jan 2018","Feb 2018","Mar 2018","Apr 2018","May 2018","Jun 2018","Jul 2018","Aug 2018","Sep 2018","Oct 2018","Nov 2018","Dec 2018","Jan 2019","Feb 2019","Mar 2019","Apr 2019","May 2019","Jun 2019","Jul 2019","Aug 2019","Sep 2019","Oct 2019","Nov 2019","Dec 2019","Jan 2020","Feb 2020","Mar 2020","Apr 2020","May 2020","Jun 2020","Jul 2020","Aug 2020","Sep 2020","Oct 2020","Nov 2020","Dec 2020","Jan 2021","Feb 2021","Mar 2021","Apr 2021","May 2021","Jun 2021","Jul 2021","Aug 2021","Sep 2021","Oct 2021","Nov 2021","Dec 2021","Jan 2022","Feb 2022","Mar 2022","Apr 2022","May 2022","Jun 2022","Jul 2022","Aug 2022","Sep 2022","Oct 2022","Nov 2022","Dec 2022","Jan 2023","Feb 2023","Mar 2023","Apr 2023","May 2023","Jun 2023","Jul 2023","Aug 2023","Sep 2023","Oct 2023","Nov 2023","Dec 2023","Jan 2024","Feb 2024","Mar 2024"}};
 }
 
-static void data_init() {
+static void data_init(void) {
     news_init();
     stocks_init();
     dates_init();
-}
-
-// Core graphics functions
-static void draw_date(int x, int y) {
-    const static int N_ROWS_REQ = 1, N_COLS_REQ = 8;
-    char buf[N_COLS_REQ + 1];
-    snprintf(buf, N_COLS_REQ + 1, "%s", dates.str[module.time]);
-    gl_draw_string(gl_get_char_width() * x, module.line_height * y, buf, GL_AMBER);
-}
-
-static void draw_news(int x, int y) {
-    // x, y are in character units (not pixels)
-    const static int N_ROWS_REQ = 9, N_COLS_REQ = 80;
-    if (x + N_COLS_REQ > module.ncols || y + N_ROWS_REQ > module.nrows) {
-        printf("Error: News out of bounds\n");
-        return;
-    }
-    for (int i = 0; i < min(N_NEWS_DISPLAY, news.n - news.top); i++) {
-        int ind = news.top + i;
-        char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
-        snprintf(buf, N_COLS_REQ + 1, "%02d) %s", ind + 1, news.text[module.time][ind]); 
-        int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
-        gl_draw_string(x_pix, y_pix, buf, news.color);
-    } 
-}
-
-static void draw_ticker(int x, int y) {
-    // x, y are in character units (not pixels)
-    const static int N_ROWS_REQ = 13, N_COLS_REQ = 12;
-    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
-        printf("Error: Ticker out of bounds\n");
-        return;
-    }
-    
-    for (int i = 0; i < min(N_TICKER_DISPLAY, ticker.n - ticker.top); i++) {
-        int ind = ticker.top + i;
-        char buf[N_COLS_REQ + 1]; // + 1 for null-terminator
-        int close_price = ticker.stocks[ind].close_price[module.time];
-        int open_price = ticker.stocks[ind].open_price[module.time];
-        int pct_change = (close_price - open_price) * 100 / open_price;
-
-        // Print symbol and pct change separately in two strings
-        snprintf(buf, N_COLS_REQ + 1, "%s", ticker.stocks[ind].symbol); 
-        char buf1[N_COLS_REQ + 1];
-        lprintf(buf1, buf, 6);
-        int x_pix = gl_get_char_width() * (x + 1), y_pix = module.line_height * (y + 1 + i);
-        gl_draw_string(x_pix, y_pix, buf1, GL_AMBER);
-
-        buf[0] = '\0';
-        buf1[0] = '\0';
-        snprintf(buf, N_COLS_REQ + 1, "%d%%", pct_change);
-        rprintf(buf1, buf, 4);
-        x_pix = gl_get_char_width() * (x + 5);
-        y_pix = module.line_height * (y + 1 + i); 
-        gl_draw_string(x_pix, y_pix, buf1, (pct_change >= 0 ? GL_GREEN : GL_RED));
-    }
-}
-
-static void draw_graph(int x, int y, int stock_ind) {
-    // `stock_ind` = index of stock in ticker.stocks[]
-    const static int N_ROWS_REQ = 18, N_COLS_REQ = 28;
-    if (x + N_COLS_REQ >= module.ncols || y + N_ROWS_REQ >= module.nrows) {
-        printf("Error: graph out of bounds\n");
-        return;
-    }
-
-    const static int N_TIME_DISPLAY = 10;
-    const static int N_PRICE_INTERVALS = 12; // for room 
-    int start_time = max(0, module.time - N_TIME_DISPLAY + 1), end_time = module.time;
-    float max_interval_price = 0, min_interval_price = 100000;
-    for (int i = start_time; i <= end_time; i++) {
-        float open_price = ticker.stocks[stock_ind].open_price[i];
-        float close_price = ticker.stocks[stock_ind].close_price[i];
-        float high_price = ticker.stocks[stock_ind].high_price[i];
-        float low_price = ticker.stocks[stock_ind].low_price[i];
-        max_interval_price = fmax(max_interval_price, fmax(open_price, close_price));
-        max_interval_price = fmax(max_interval_price, fmax(high_price, low_price));
-        min_interval_price = fmin(min_interval_price, fmin(open_price, close_price));
-        min_interval_price = fmin(min_interval_price, fmin(high_price, low_price));
-    }
-
-    // calculate step size
-    float step_size, diff = max_interval_price - min_interval_price; 
-    if (1 <= diff && diff <= 10) step_size = ceil(diff) / 10;
-    else if (10 < diff && diff <= 20) step_size = 2;
-    else if (20 < diff && diff <= 40) step_size = 4;
-    else if (40 < diff && diff <= 50) step_size = 5;
-    else if (50 < diff && diff <= 100) step_size = 10;
-    else if (100 < diff && diff <= 200) step_size = 20;
-    else if (200 < diff && diff <= 400) step_size = 40;
-    else if (400 < diff && diff <= 800) step_size = 80;
-    else {
-        if (diff < 1) { // two or more digits after decimal point not supported
-            printf("WARNING: stock too static (max_interval_price - min_interval_price = %f < 1)\n", diff);
-        }
-        if (diff > 80) {
-            printf("WARNING: stock too volatile (max_interval_price - min_interval_price = %f > 200)\n", diff);
-        }
-        return; 
-    }
-
-    // draw title
-    char buf[N_COLS_REQ + 1], buf1[N_COLS_REQ + 1];
-    snprintf(buf, N_COLS_REQ + 1, "%s (%s)\n", ticker.stocks[stock_ind].name, ticker.stocks[stock_ind].symbol);
-    gl_draw_string(gl_get_char_width() * x, module.line_height * y, buf, GL_AMBER);
-
-    // draw axes
-    float graph_min = (int)(min_interval_price / step_size) * step_size;
-    float graph_max = graph_min + N_PRICE_INTERVALS * step_size;
-    for (int i = 0; i < N_PRICE_INTERVALS; i++) {
-        buf[0] = '\0'; buf1[0] = '\0';
-        snprintf(buf, N_COLS_REQ + 1, "%.1f-", graph_max - i * step_size);
-        rprintf(buf1, buf, 8);
-        int x_pix = gl_get_char_width() * x, y_pix = module.line_height * (y + 1 + i);
-        gl_draw_string(x_pix, y_pix, buf1, GL_WHITE);
-    }
-    int x_pix = gl_get_char_width() * (x + 8), y_pix = module.line_height * (y + 1);
-    gl_draw_line(x_pix, y_pix, x_pix, y_pix + module.line_height * (y + 1 + N_PRICE_INTERVALS) - 1);
-    y_pix = module.line_height * (y + 1 + N_PRICE_INTERVALS);
-    gl_draw_line(x_pix, y_pix, x_pix + 21 * gl_get_char_width(), GL_WHITE);
-    
-    // draw box plot
-    for (int i = 0; i <= end_time - start_time; i++) {
-        float open_price = ticker.stocks[stock_ind].open_price[i + start_time];
-        float close_price = ticker.stocks[stock_ind].close_price[i + start_time];
-        float high_price = ticker.stocks[stock_ind].high_price[i + start_time];
-        float low_price = ticker.stocks[stock_ind].low_price[i + start_time];
-        float max_price = fmax(open_price, close_price), min_price = fmin(open_price, close_price);
-        int bx = (x + 6 + 2 * i) * gl_get_char_width() + 4;
-        int by = (y + 1) * module.line_height + (graph_max - max_price) * 20 / step_size;
-        int w = 2 * (gl_get_char_width() - 4);
-        int h = (max_price - min_price) * 20 / step_size;
-        int ly1 = (y + 1) * module.line_height + (graph_max - high_price) * 20 / step_size;
-        int ly2 = (y + 1) * module.line_height + (graph_max - low_price) * 20 / step_size;
-        int lx = (x + 6 + 2 * i) * gl_get_char_width() + 13;
-        color_t color = (open_price >= close_price ? GL_RED : GL_GREEN);
-        gl_draw_rect(bx, by, w, h, color);
-        gl_draw_line(lx, ly1, lx, ly2, color);
-        gl_draw_line(lx + 1, ly1, lx + 1, ly2, color);
-        gl_draw_line(lx + 2, ly1, lx + 2, ly2, color);
-    }
-}
-
-static void draw_all() {
-    gl_clear(module.bg_color);
-    draw_date(0, 0);
-    draw_graph(12, 0, 1);
-    draw_ticker(0, 3);
-    draw_news(0, 16);
-}
-
-static void display() {
-    gl_swap_buffer();
-}
-
-// Interrupt handlers
-static void hstimer0_handler(uintptr_t pc, void *aux_data) {
-    module.tick_10s = (module.tick_10s + 1) % 3;
-    if (module.tick_10s == 0) {
-        module.time++; // increases every 30 seconds, or 3 10-s ticks
-        if (module.time == 100) {
-            hstimer_interrupt_clear(HSTIMER0);
-            hstimer_disable(HSTIMER0);
-            interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, NULL, NULL);
-            interrupts_disable_source(INTERRUPT_SOURCE_HSTIMER0);
-            memory_report();
-            return;
-        }
-        ticker.top = 0;
-        news.top = 0;
-        return;
-    }
-    ticker.top += N_TICKER_DISPLAY;
-    if (ticker.top >= ticker.n) {
-        ticker.top = 0;
-    }
-    news.top += N_NEWS_DISPLAY;
-    if (news.top >= news.n) {
-        news.top = 0;
-    }
-    draw_all();
-    display();
-    hstimer_interrupt_clear(HSTIMER0);
-}
-
-void interface_init(int nrows, int ncols) {
-    const static int LINE_SPACING = 4;
-
-    data_init();
-    interrupts_init();
-    gpio_init();
-    timer_init();
-    uart_init();
-
-    printf("Now running interface!\n");
-
-    // settings
-    module.bg_color = GL_BLACK;
-    module.time = 5;
-    module.nrows = nrows;
-    module.ncols = ncols;
-    module.line_height = gl_get_char_height() + LINE_SPACING;
-    module.tick_10s = 0;
-
-    // display
-    gl_init(ncols * gl_get_char_width(), nrows * module.line_height, GL_DOUBLEBUFFER);
-    draw_all();
-    display();
-
-    // interrupt settings
-    hstimer_init(HSTIMER0, 1000000);
-    hstimer_enable(HSTIMER0);
-    interrupts_enable_source(INTERRUPT_SOURCE_HSTIMER0);
-    interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, hstimer0_handler, NULL);
-    // for 30s: track # calls mod 3 with global variable tick_10s
-
-    interrupts_global_enable(); // everything fully initialized, now turn on interrupts
-}
-
-void main(void) {
-    interface_init(30, 80);
-    while (1) {
-    }
 }
 
