@@ -5,7 +5,7 @@
 // does not handle any errors
 // might be educational; definitely not practical
 
-#include "math_float.h"
+#include "mathlib.h"
 
 // for more precision: use math.h (the double version), not much slower
 
