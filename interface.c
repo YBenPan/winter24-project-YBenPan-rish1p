@@ -334,6 +334,66 @@ static void news_init(void) {
     news.color = GL_AMBER;
     news.top = 0;
 
+    // Dec 2015
+    news.text[0][0] = "Federal Reserve raises interest rates for first time in nearly a decade";
+    news.text[0][1] = "Oil prices fall below $35 per barrel amid global supply glut";
+    news.text[0][2] = "Yahoo scraps plan to spin off Alibaba stake after tax concerns";
+    news.text[0][3] = "Toshiba to cut 7,000 jobs after $1.3 billion accounting scandal";
+    news.text[0][4] = "McDonald's moves tax base to UK in $3.2 billion restructuring";
+    news.text[0][5] = "Puerto Rico defaults on portion of $73 billion debt";
+    news.text[0][6] = "Chipotle shares plummet as E. coli outbreak expands across US";
+    news.text[0][7] = "DuPont and Dow Chemical agree to $130 billion mega-merger";
+    news.text[0][8] = "Valeant discloses criminal probe over pricing practices";
+    news.text[0][9] = "Apple shares tumble as iPhone sales growth slows";
+
+    // Jan 2016
+    news.text[1][0] = "China's stock market turmoil rattles global markets";
+    news.text[1][1] = "Oil prices plunge below $30 per barrel amid supply glut";
+    news.text[1][2] = "US imposes new sanctions on Iran after missile test";
+    news.text[1][3] = "Volkswagen emissions scandal costs continue to mount";
+    news.text[1][4] = "Yahoo explores sale of core internet business";
+    news.text[1][5] = "US job growth slows in December as wages rise";
+    news.text[1][6] = "Dow drops over 400 points as China slowdown fears persist";
+    news.text[1][7] = "Netflix shares tumble on weak subscriber growth forecast";
+    news.text[1][8] = "Amazon reports record holiday sales but misses expectations";
+    news.text[1][9] = "Apple's quarterly revenue declines for first time since 2003";
+
+    // Feb 2016
+    news.text[2][0] = "Stock market rout continues as oil prices slide further";
+    news.text[2][1] = "US Fed keeps interest rates unchanged amid market turmoil";
+    news.text[2][2] = "Apple's fight with FBI over iPhone encryption escalates";
+    news.text[2][3] = "Tesco faces record $6.5 billion overstatement fine";
+    news.text[2][4] = "Twitter shares plunge as user growth stalls";
+    news.text[2][5] = "Alphabet (Google) overtakes Apple as world's most valuable company";
+    news.text[2][6] = "Takata agrees to record $200 million fine over faulty airbags";
+    news.text[2][7] = "Pfizer and Allergan scrap $160 billion merger deal";
+    news.text[2][8] = "US job growth rebounds in January after weak December";
+    news.text[2][9] = "Amazon shares soar as AWS cloud business shines";
+
+    // Mar 2016
+    news.text[3][0] = "ECB launches fresh stimulus measures to boost eurozone economy";
+    news.text[3][1] = "Oil prices recover but remain volatile amid oversupply";
+    news.text[3][2] = "Yahoo set to cut workforce by 15% amid turnaround struggles";
+    news.text[3][3] = "FBI unlocks San Bernardino shooter's iPhone without Apple's help";
+    news.text[3][4] = "Valeant faces criminal probe over pharmaceutical pricing";
+    news.text[3][5] = "US Fed leaves interest rates unchanged, signals caution";
+    news.text[3][6] = "Marriott completes $13 billion acquisition of Starwood Hotels";
+    news.text[3][7] = "Apple unveils smaller iPhone SE and new iPad Pro models";
+    news.text[3][8] = "Tesla aims to become a mass-market automaker with Model 3 launch";
+    news.text[3][9] = "Lufthansa strikes ground hundreds of flights across Europe";
+
+    // Apr 2016
+    news.text[4][0] = "Saudi Arabia unveils radical plan to reduce oil dependency";
+    news.text[4][1] = "Volkswagen reaches $4.3 billion US criminal settlement over emissions";
+    news.text[4][2] = "Microsoft sues US government over data privacy violations";
+    news.text[4][3] = "OPEC and non-OPEC producers fail to reach output freeze deal";
+    news.text[4][4] = "Amazon shares soar after blowing past profit expectations";
+    news.text[4][5] = "Twitter shares plummet as revenue growth stalls";
+    news.text[4][6] = "Puerto Rico defaults on $422 million debt payment";
+    news.text[4][7] = "Chernobyl nuclear disaster costs still emerging after 30 years";
+    news.text[4][8] = "Tesla aims for volume production of Model 3 by late 2017";
+    news.text[4][9] = "Mitsubishi admits to falsifying fuel economy data for 25 years";
+
     // May 2016
     news.text[5][0] = "Oil prices surge as Goldman Sachs forecasts supply deficit";
     news.text[5][1] = "Microsoft agrees to buy LinkedIn for $26.2 billion";
