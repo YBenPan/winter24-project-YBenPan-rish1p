@@ -213,6 +213,7 @@ static const option_t options[] = {
     {"sell",  "sell <symbol> <shares>",  "sells a stock with a given ticker symbol"},
     {"price",  "price <symbol>",  "return price a stock with a given ticker symbol"},
     {"graph",  "graph <symbol>",  "graphs a price a stock with a given ticker symbol"},
+    {"info",  "info",  "returns a table of owned stocks and their information", cmd_info},
     {"pnl",  "pnl",  "returns how much money you have (stonks!)"},
     {"bankruptcy",  "bankruptcy [please]", "declares bankruptcy! we just print more money and get rid of your debt"},
 };
