@@ -30,6 +30,7 @@ int comm_putstring(const char *str) {
     uart_putchar('#');
 
     while (str[n]) {
+        for (int i = 0; i < 1000000; i++) {};
         uart_putchar(str[n++]);
     }
     uart_putchar('#');
@@ -63,7 +64,7 @@ void uart_rx_interrupt_handler(long unsigned int irq, void *client_data) {
                 hash_count++;
                 if (hash_count == 3) {
                     message_buffer[message_index] = '\0';
-                    comm_putstring(message_buffer);
+                    // comm_putstring(message_buffer);
                     exchange_evaluate(message_buffer); 
 
                     collecting = false;

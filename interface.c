@@ -114,7 +114,7 @@ static void draw_all();
 // Commands settings and functions
 int cmd_buy(int argc, const char *argv[]) {
     if (argc != 3) {
-        comm_putstring("error: buy expects 2 arguments [symbol] [shares]\n");
+        comm_putstring("\nerror: buy expects 2 arguments [symbol] [shares]\n");
         return -1;
     }
     char buf[100];
@@ -123,13 +123,13 @@ int cmd_buy(int argc, const char *argv[]) {
             int nshares = strtonum(argv[2], NULL);  
             float cost = nshares * ticker.stocks[i].close_price[module.time];
             if (inventory.cash < cost) {
-                snprintf(buf, sizeof(buf), "Not enough cash! Need $%.2f to purchase %d shares of %s\n", cost, nshares, argv[1]);
+                snprintf(buf, sizeof(buf), "\nNot enough cash! Need $%.2f to purchase %d shares of %s\n", cost, nshares, argv[1]);
                 comm_putstring(buf);
                 return -1;
             }
             inventory.shares[i] += nshares;
             inventory.cash -= cost;
-            snprintf(buf, sizeof(buf), "Successfully bought %d shares; currently own %d shares of [%s] \n", nshares, inventory.shares[i], argv[1]);
+            snprintf(buf, sizeof(buf), "\nSuccessfully bought %d shares; currently own %d shares of [%s] \n", nshares, inventory.shares[i], argv[1]);
             comm_putstring(buf);
             return 0;
         }
@@ -141,7 +141,7 @@ int cmd_buy(int argc, const char *argv[]) {
 
 int cmd_sell(int argc, const char *argv[]) {
     if (argc != 3) {
-        comm_putstring("error: sell expects 2 arguments [symbol] [shares]\n");
+        comm_putstring("\nerror: sell expects 2 arguments [symbol] [shares]\n");
         return -1;
     }
     char buf[100];
@@ -149,43 +149,43 @@ int cmd_sell(int argc, const char *argv[]) {
         if (strcmp(argv[1], ticker.stocks[i].symbol) == 0) {
             int nshares = strtonum(argv[2], NULL);
             if (inventory.shares[i] < nshares) {
-                snprintf(buf, sizeof(buf), "Only have %d shares in the inventory; Try again!\n", inventory.shares[i]);
+                snprintf(buf, sizeof(buf), "\nOnly have %d shares in the inventory; Try again!\n", inventory.shares[i]);
                 comm_putstring(buf);
                 return -1;
             }
             inventory.shares[i] -= nshares;
             inventory.cash += nshares * ticker.stocks[i].close_price[module.time];
-            snprintf(buf, sizeof(buf), "Successfully sold %d shares; currently own %d shares of [%s]\n", nshares, inventory.shares[i], argv[1]);
+            snprintf(buf, sizeof(buf), "\nSuccessfully sold %d shares; currently own %d shares of [%s]\n", nshares, inventory.shares[i], argv[1]);
             comm_putstring(buf);
             return 0;
         }    
     }
-    snprintf(buf, sizeof(buf), "[%s] not a traded stock; Try again!\n", argv[1]);
+    snprintf(buf, sizeof(buf), "\n[%s] not a traded stock; Try again!\n", argv[1]);
     comm_putstring(buf);
     return -1;
 }
 
 int cmd_price(int argc, const char *argv[]) {
     if (argc != 2) {
-        comm_putstring("error: price expects 1 argument [symbol]\n");
+        comm_putstring("\nerror: price expects 1 argument [symbol]\n");
         return -1;
     }
     char buf[100];
     for (int i = 0; i < ticker.n; i++) {
         if (strcmp(argv[1], ticker.stocks[i].symbol) == 0) {
-            snprintf(buf, sizeof(buf), "Price of [%s]: $%.2f\n", argv[1], ticker.stocks[i].close_price[module.time]);
+            snprintf(buf, sizeof(buf), "\nPrice of [%s]: $%.2f\n", argv[1], ticker.stocks[i].close_price[module.time]);
             comm_putstring(buf);
             return 0;
         }
     }
-    snprintf(buf, sizeof(buf), "[%s] not a traded stock; Try again!\n", argv[1]);
+    snprintf(buf, sizeof(buf), "\n[%s] not a traded stock; Try again!\n", argv[1]);
     comm_putstring(buf);
     return -1;
 }
 
 int cmd_graph(int argc, const char *argv[]) {
     if (argc != 2) {
-        comm_putstring("error: graph expects 1 argument [symbol]\n");
+        comm_putstring("\nerror: graph expects 1 argument [symbol]\n");
         return -1;
     }
     char buf[100];
@@ -194,12 +194,12 @@ int cmd_graph(int argc, const char *argv[]) {
             module.stock_ind = i;
             draw_all();
             gl_swap_buffer();
-            snprintf(buf, sizeof(buf), "Now displaying [%s]\n", argv[1]);
+            snprintf(buf, sizeof(buf), "\nNow displaying [%s]\n", argv[1]);
             comm_putstring(buf);
             return 0;
         }
     }
-    snprintf(buf, sizeof(buf), "[%s] not a traded stock; Try again!\n", argv[1]);
+    snprintf(buf, sizeof(buf), "\n[%s] not a traded stock; Try again!\n", argv[1]);
     comm_putstring(buf);
     return -1;
 }
@@ -213,56 +213,61 @@ static float get_total_val(void) {
 }
 
 int cmd_info(int argc, const char *argv[]) {
-    comm_putstring(" STOCK | SHARES | PRICE \n");
+    comm_putstring("\n STOCK | SHARES | PRICE \n");
     comm_putstring("------------------------\n");
     char buf[100], buf1[100];
     for (int i = 0; i < ticker.n; i++) {
         if (inventory.shares[i] > 0) {
-            snprintf(buf, sizeof(buf), "%s", ticker.stocks[i].symbol); 
-            lprintf(buf1, buf, 7);
+            snprintf(buf, sizeof(buf), "\n%s", ticker.stocks[i].symbol); 
+            lprintf(buf1, buf, 8);
             comm_putstring(buf1);
-            comm_putstring("|");
+            comm_putstring(" ");
             snprintf(buf, sizeof(buf), "%d", inventory.shares[i]);
-            lprintf(buf1, buf, 8);
+            lprintf(buf1, buf, 9);
             comm_putstring(buf1);
-            comm_putstring("|");
+            comm_putstring(" ");
             snprintf(buf, sizeof(buf), "%.2f\n", ticker.stocks[i].close_price[module.time]);
-            lprintf(buf1, buf, 8);
-            comm_putstring(buf1);
+            comm_putstring(buf);
         }
     }
     return 0;
 }
 
 int cmd_pnl(int argc, const char *argv[]) {
-    char buf[100], buf1[100];
+    char buf[100], buf1[100], buf2[100];
     float cur_cap = get_total_val();
+   
+    snprintf(buf, sizeof(buf), "\nInitial Capital: ");
+    snprintf(buf1, sizeof(buf1), "%.2f\n", inventory.init_cap);
+    rprintf(buf2, buf1, 12);
+    strlcat(buf, buf2, sizeof(buf)); 
+    comm_putstring(buf);
 
-    comm_putstring("Initial Capital: ");
-    snprintf(buf, sizeof(buf), "%.2f\n", inventory.init_cap);
-    rprintf(buf1, buf, 12);
-    comm_putstring(buf1);
+    snprintf(buf, sizeof(buf), "Current Capital: ");
+    snprintf(buf1, sizeof(buf1), "%.2f\n", inventory.cash + cur_cap);
+    rprintf(buf2, buf1, 12);
+    strlcat(buf, buf2, sizeof(buf)); 
+    comm_putstring(buf);
 
-    comm_putstring("Current Capital: ");
-    snprintf(buf, sizeof(buf), "%.2f\n", inventory.cash + cur_cap);
-    rprintf(buf1, buf, 12);
-    comm_putstring(buf1);
+    snprintf(buf, sizeof(buf), "Cash           : ");
+    snprintf(buf1, sizeof(buf1), "%.2f\n", inventory.cash);
+    rprintf(buf2, buf1, 12);
+    strlcat(buf, buf2, sizeof(buf));
+    comm_putstring(buf);
 
-    comm_putstring("Cash           : ");
-    snprintf(buf, sizeof(buf), "%.2f\n", inventory.cash);
-    rprintf(buf1, buf, 12);
-    comm_putstring(buf1);
-
-    comm_putstring("Stock          : ");
-    snprintf(buf, sizeof(buf), "%.2f\n", cur_cap);
-    rprintf(buf1, buf, 12);
-    comm_putstring(buf1);
+    snprintf(buf, sizeof(buf), "Stock          : ");
+    snprintf(buf1, sizeof(buf1), "%.2f\n", cur_cap);
+    rprintf(buf2, buf1, 12);
+    strlcat(buf, buf2, sizeof(buf));
+    comm_putstring(buf);
 
     float pct_change = (cur_cap + inventory.cash - inventory.init_cap) / inventory.init_cap * 100;
-    comm_putstring("Profit / Loss:   ");
-    snprintf(buf, sizeof(buf), "%.1f%%\n", pct_change);
-    rprintf(buf1, buf, 12);
-    comm_putstring(buf1);
+    snprintf(buf, sizeof(buf), "Profit / Loss  : ");
+    snprintf(buf1, sizeof(buf1), "%.1f\n", pct_change);
+    rprintf(buf2, buf1, 12);
+    strlcat(buf, buf2, sizeof(buf));
+    comm_putstring(buf);
+
     return 0;
 }
 
@@ -270,7 +275,7 @@ int cmd_bankruptcy(int argc, const char *argv[]) {
     memset(inventory.shares, 0, sizeof(inventory.shares));
     inventory.init_cap = 10000;
     inventory.cash = 10000;
-    comm_putstring("Bankruptcy Successful! Thank you Congress for letting us fail upwards!");
+    comm_putstring("\nBankruptcy Successful! Thank you Congress for letting us fail upwards!\n");
     return 0;
 }
 
@@ -516,8 +521,6 @@ static void hstimer0_handler(uintptr_t pc, void *aux_data) {
             hstimer_disable(HSTIMER0);
             interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, NULL, NULL);
             interrupts_disable_source(INTERRUPT_SOURCE_HSTIMER0);
-            const char *argv[1] = {"pnl"};
-            cmd_pnl(1, argv);
             memory_report();
             return;
         }
