@@ -16,14 +16,18 @@ Ben:
 
 ## References
 Influences: Michael Bloomberg, Ken Griffin
+
 Citation: Claude 3 Sonnet (for generating news data) and Yahoo Finance (for stock data)
 
 ## Self-evaluation
 How well was your team able to execute on the plan in your proposal?  
-- We successfully followed the plan in our proposal. We felt networking was too ambitious and we know we won't have enough time to figure it out, so it was a wise decision. 
+- We successfully followed the plan in our proposal. We felt networking was too ambitious and we know we won't have enough time to figure it out, so it was a wise decision.
+
 Any trying or heroic moments you would like to share? Of what are you particularly proud:
 the effort you put into it? the end product? the process you followed?
 what you learned along the way? Tell us about it!
+- Heroic moments: cramming the last part (connecting the Pi) the night before at Gates Basement
+- Proud of: creating a good plan and following through. Modified the plan as new issues popped up (implement floating point for printf)
 
 ## Photos
 You are encouraged to submit photos/videos of your project in action. 
