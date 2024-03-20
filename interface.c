@@ -26,6 +26,7 @@ static struct {
     int time;
     int tick; // tracks # ticks mod (time of one refresh)
     int nrows, ncols, line_height;
+    int stock_ind; // index of stock on display
 } module;
 
 typedef struct stock {
@@ -248,7 +249,7 @@ static void draw_graph(int x, int y, int stock_ind) {
 static void draw_all() {
     gl_clear(module.bg_color);
     draw_date(0, 0);
-    draw_graph(12, 0, 2);
+    draw_graph(12, 0, module.stock_ind);
     draw_ticker(0, 3);
     draw_news(0, 16);
 }
@@ -305,6 +306,7 @@ void interface_init(int nrows, int ncols) {
     module.ncols = ncols;
     module.line_height = gl_get_char_height() + LINE_SPACING;
     module.tick = 0;
+    module.stock_ind = 2; // NVDA
 
     // display
     gl_init(ncols * gl_get_char_width(), nrows * module.line_height, GL_DOUBLEBUFFER);
