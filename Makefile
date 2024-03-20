@@ -4,7 +4,7 @@
 # Link against your libmango + reference libmango (edit LDLIBS, LDFLAGS to change)
 
 SERVER_PROGRAM = interface.bin
-SERVER_SOURCES = interface.c mathlib.c
+SERVER_SOURCES = interface.c mathlib.c comm.c
 
 all: $(SERVER_PROGRAM)
 

@@ -12,6 +12,9 @@
 #include "uart.h"
 #include "hstimer.h"
 #include "mathlib.h"
+#include "comm.h"
+#include "shell.h"
+#include "shell_commands.h"
 
 extern void memory_report();
 
@@ -51,6 +54,7 @@ static struct {
 } news; 
 
 static struct {
+    float init_cap;
     int shares[MAX_STOCKS];
 } inventory;
 
@@ -104,6 +108,207 @@ static void news_init(void);
 static void stocks_init(void);
 static void dates_init(void);
 static void data_init(void);
+
+static void draw_all();
+
+// Commands settings and functions
+int cmd_buy(int argc, const char *argv[]) {
+    if (argc != 3) {
+        comm_putstring("error: buy expects 2 arguments [symbol] [shares]\n");
+        return -1;
+    }
+    char buf[100];
+    for (int i = 0; i < ticker.n; i++) {
+        if (strcmp(argv[1], ticker.stocks[i].symbol) == 0) {
+            int nshares = strtonum(argv[0], NULL);  
+            inventory.shares[i] += nshares;
+            snprintf(buf, sizeof(buf), "Successfully bought %d shares; currently own %d shares of [%s] \n", nshares, inventory.shares[i], argv[1]);
+            comm_putstring(buf);
+            return 0;
+        }
+    }
+    snprintf(buf, sizeof(buf), "[%s] not a traded stock; Try again!\n", argv[1]);
+    comm_putstring(buf);
+    return -1;
+}
+
+int cmd_sell(int argc, const char *argv[]) {
+    if (argc != 3) {
+        comm_putstring("error: sell expects 2 arguments [symbol] [shares]\n");
+        return -1;
+    }
+    char buf[100];
+    for (int i = 0; i < ticker.n; i++) {
+        if (strcmp(argv[1], ticker.stocks[i].symbol) == 0) {
+            int nshares = strtonum(argv[0], NULL);
+            if (inventory.shares[i] < nshares) {
+                snprintf(buf, sizeof(buf), "Only have %d shares in the inventory; Try again!\n", inventory.shares[i]);
+                comm_putstring(buf);
+                return -1;
+            }
+            inventory.shares[i] -= nshares;
+            snprintf(buf, sizeof(buf), "Successfully sold %d shares; currently own %d shares of [%s]\n", nshares, inventory.shares[i], argv[1]);
+            comm_putstring(buf);
+            return 0;
+        }    
+    }
+    snprintf(buf, sizeof(buf), "[%s] not a traded stock; Try again!\n", argv[1]);
+    comm_putstring(buf);
+    return -1;
+}
+
+int cmd_price(int argc, const char *argv[]) {
+    if (argc != 2) {
+        comm_putstring("error: price expects 1 argument [symbol]\n");
+        return -1;
+    }
+    char buf[100];
+    for (int i = 0; i < ticker.n; i++) {
+        if (strcmp(argv[1], ticker.stocks[i].symbol) == 0) {
+            snprintf(buf, sizeof(buf), "Price of [%s]: $%.2f\n", argv[1], ticker.stocks[i].close_price[module.time]);
+            comm_putstring(buf);
+            return 0;
+        }
+    }
+    snprintf(buf, sizeof(buf), "[%s] not a traded stock; Try again!\n", argv[1]);
+    comm_putstring(buf);
+    return -1;
+}
+
+int cmd_graph(int argc, const char *argv[]) {
+    if (argc != 2) {
+        comm_putstring("error: graph expects 1 argument [symbol]\n");
+        return -1;
+    }
+    char buf[100];
+    for (int i = 0; i < ticker.n; i++) {
+        if (strcmp(argv[1], ticker.stocks[i].symbol) == 0) {
+            module.stock_ind = i;
+            draw_all();
+            gl_swap_buffer();
+            snprintf(buf, sizeof(buf), "Now displaying [%s]\n", argv[1]);
+            comm_putstring(buf);
+            return 0;
+        }
+    }
+    snprintf(buf, sizeof(buf), "[%s] not a traded stock; Try again!\n", argv[1]);
+    comm_putstring(buf);
+    return -1;
+}
+
+int cmd_pnl(int argc, const char *argv[]) {
+    char buf[100], buf1[100];
+    float cur_cap = 0;
+    for (int i = 0; i < ticker.n; i++) {
+        cur_cap += ticker.stocks[i].close_price[i] * inventory.shares[i];
+    }
+    comm_putstring("Initial Capital: ");
+    snprintf(buf, sizeof(buf), "%.2f\n", inventory.init_cap);
+    rprintf(buf1, buf, 12);
+    comm_putstring(buf1);
+
+    comm_putstring("Current Capital: ");
+    snprintf(buf, sizeof(buf), "%.2f\n", cur_cap);
+    rprintf(buf1, buf, 12);
+    comm_putstring(buf1);
+
+    float pct_change = (cur_cap - inventory.init_cap) / inventory.init_cap * 100;
+    comm_putstring("Profit / Loss:   ");
+    snprintf(buf, sizeof(buf), "%.1f%%\n", pct_change);
+    rprintf(buf1, buf, 12);
+    comm_putstring(buf1);
+    return 0;
+}
+
+int cmd_bankruptcy(int argc, const char *argv[]) {
+    memset(inventory.shares, 0, sizeof(inventory.shares));
+    comm_putstring("Bankruptcy Successful!");
+    return 0;
+}
+
+static const command_t commands[] = { 
+    {"buy",  "buy <symbol> <shares>",  "buys shares of a stock with a given ticker symbol", cmd_buy},
+    {"sell",  "sell <symbol> <shares>",  "sells a stock with a given ticker symbol", cmd_sell},
+    {"price",  "price <symbol>",  "return price a stock with a given ticker symbol", cmd_price},
+    {"graph",  "graph <symbol>",  "graphs a price a stock with a given ticker symbol", cmd_graph},
+    {"pnl",  "pnl",  "returns how much money you have (stonks!)", cmd_pnl},
+    {"bankruptcy",  "bankruptcy [please]", "declares bankruptcy! we just print more money and get rid of your debt", cmd_bankruptcy},
+};
+
+// Helper functions for `shell_evaluate`
+static char *strndup(const char *src, size_t n) {
+    //CITATION: This function is from lab 4 exercise 2
+    size_t len = strlen(src);
+    if (len > n) {
+        len = n; 
+    }
+
+    char *x = (char *)malloc(len + 1);
+    if (x == NULL) {
+        return NULL; 
+    }
+
+    memcpy(x, src, len);
+    x[len] = '\0';
+
+    return x; 
+}
+
+static bool isspace(char ch) {
+    //CITATION: This function is from lab 4 exercise 2
+    return ch == ' ' || ch == '\t' || ch == '\n';
+}
+
+static int tokenize(const char *line, char *array[],  int max) {
+    //CITATION: This function is from lab 4 exercise 2
+    int num_tokens = 0;
+    const char *cur = line;
+
+    while (num_tokens < max) {
+        while (isspace(*cur)) cur++;    // skip spaces (stop non-space/null)
+        if (*cur == '\0') break;        // no more non-space chars
+        const char *start = cur;
+        while (*cur != '\0' && !isspace(*cur)) cur++; // advance to end (stop space/null)
+        array[num_tokens++] = strndup(start, cur - start);   // make heap-copy, add to array
+    }
+    return num_tokens;
+}
+
+int exchange_evaluate(const char *line) {
+    // This function evaluates the input against a 
+    // list of commands in the command array
+    // Recycled from `shell.c` to process user input from console
+
+    char *tokens[100];
+    int num_tokens = tokenize(line, tokens, 100);
+
+    if (num_tokens == 0) {
+        return -1; 
+    }
+
+    for (int i = 0; i < sizeof(commands) / sizeof(commands[0]); i++) {
+        if (strcmp(tokens[0], commands[i].name) == 0) {
+            int result = commands[i].fn(num_tokens, (const char **)tokens);
+            for (int j = 0; j < num_tokens; ++j) {
+                free(tokens[j]);//Freeing associated token to avoid memory leak
+            }
+
+            return result;
+        }
+    }
+    char buf[100];
+    // snprintf(buf, sizeof(buf), "error: no such command '%s'.\n", tokens[0]);
+    // comm_putstring(buf);
+    comm_putstring("NO SUCH COMMAND");
+
+    // Free the allocated tokens
+    for (int j = 0; j < num_tokens; ++j) {
+        free(tokens[j]);
+    }
+
+    return -1;
+}
+
 
 // Core graphics functions
 static void draw_date(int x, int y) {
@@ -254,10 +459,6 @@ static void draw_all() {
     draw_news(0, 16);
 }
 
-static void display() {
-    gl_swap_buffer();
-}
-
 // Interrupt handlers
 static void hstimer0_handler(uintptr_t pc, void *aux_data) {
     module.tick = (module.tick + 1) % 2;
@@ -284,7 +485,7 @@ static void hstimer0_handler(uintptr_t pc, void *aux_data) {
         news.top = 0;
     }
     draw_all();
-    display();
+    gl_swap_buffer();
     hstimer_interrupt_clear(HSTIMER0);
 }
 
@@ -295,9 +496,7 @@ void interface_init(int nrows, int ncols) {
     interrupts_init();
     gpio_init();
     timer_init();
-    uart_init();
-
-    printf("Now running interface!\n");
+    comm_init();
 
     // settings
     module.bg_color = GL_BLACK;
@@ -308,17 +507,19 @@ void interface_init(int nrows, int ncols) {
     module.tick = 0;
     module.stock_ind = 2; // NVDA
 
+    inventory.init_cap = 10000;
+
     // display
     gl_init(ncols * gl_get_char_width(), nrows * module.line_height, GL_DOUBLEBUFFER);
     draw_all();
-    display();
+    gl_swap_buffer();
 
     // interrupt settings
     hstimer_init(HSTIMER0, 5000000);
     hstimer_enable(HSTIMER0);
     interrupts_enable_source(INTERRUPT_SOURCE_HSTIMER0);
     interrupts_register_handler(INTERRUPT_SOURCE_HSTIMER0, hstimer0_handler, NULL);
-    // for 30s: track # calls mod 3 with global variable tick_10s
+    setup_uart_interrupts();
 
     interrupts_global_enable(); // everything fully initialized, now turn on interrupts
 }

@@ -209,13 +209,12 @@ typedef struct {
 } option_t;
 
 static const option_t options[] = {
-    {"buy",  "buy <stockcode>",  "buys a stock with a given stockcode"},
-    {"sell",  "sell <stockcode>",  "sells a stock with a given stockcode"},
-    {"price",  "price <stockcode>",  "return price a stock with a given stockcode"},
-    {"graph",  "graph <stockcode>",  "graphs a price a stock with a given stockcode"},
-    {"pnl",  "pnl <stockcode>",  "returns how much money you have (stonks!)"},
+    {"buy",  "buy <symbol> <shares>",  "buys shares of a stock with a given ticker symbol"},
+    {"sell",  "sell <symbol> <shares>",  "sells a stock with a given ticker symbol"},
+    {"price",  "price <symbol>",  "return price a stock with a given ticker symbol"},
+    {"graph",  "graph <symbol>",  "graphs a price a stock with a given ticker symbol"},
+    {"pnl",  "pnl",  "returns how much money you have (stonks!)"},
     {"bankruptcy",  "bankruptcy [please]", "declares bankruptcy! we just print more money and get rid of your debt"},
-    {"profile", "profile [on] [off]", "measures hot-spots by address/memory execution"},
 };
 
 int cmd_options(int argc, const char *argv[]);
@@ -233,9 +232,9 @@ static const command_t commands[] = {
 
 
 int cmd_options(int argc, const char *argv[]) {
-        for (int i = 0; i < 7; i++) {
-            module.shell_printf("%s\t- %s\n", options[i].name, options[i].description);
-        }
+    for (int i = 0; i < 7; i++) {
+        module.shell_printf("%s\t- %s\n", options[i].name, options[i].description);
+    }
     return 0;
 }
 //This function prints out all commands or searches through them respectively.

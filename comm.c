@@ -13,6 +13,8 @@
 #include "interrupts.h"
 #include "printf.h"
 #include "ringbuffer.h"
+#include "interface.h"
+
 void comm_init(void) {
     uart_init();
     static bool initialized = false;
@@ -61,7 +63,8 @@ void uart_rx_interrupt_handler(long unsigned int irq, void *client_data) {
                 hash_count++;
                 if (hash_count == 3) {
                     message_buffer[message_index] = '\0';
-                    shell_evaluate(message_buffer); 
+                    comm_putstring(message_buffer);
+                    exchange_evaluate(message_buffer); 
 
                     collecting = false;
                     hash_count = 0;
