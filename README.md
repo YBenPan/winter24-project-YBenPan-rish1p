@@ -11,6 +11,7 @@ In this project, we build a high-frequency trading system which constitutes of t
 Rishi:
 - Set up hardware
 - Developed console interface
+
 Ben:
 - Designed & developed exchange interface
 
