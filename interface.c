@@ -270,7 +270,7 @@ int cmd_bankruptcy(int argc, const char *argv[]) {
     memset(inventory.shares, 0, sizeof(inventory.shares));
     inventory.init_cap = 10000;
     inventory.cash = 10000;
-    comm_putstring("Bankruptcy Successful! Starting with $10,000 again.");
+    comm_putstring("Bankruptcy Successful! Thank you Congress for letting us fail upwards!");
     return 0;
 }
 
@@ -451,7 +451,6 @@ static void draw_graph(int x, int y, int stock_ind) {
         }
         return; 
     }
-    printf("STEP_SIZE: %.2f\n", step_size);
 
     // draw title
     char buf[N_COLS_REQ + 1], buf1[N_COLS_REQ + 1];
@@ -478,11 +477,6 @@ static void draw_graph(int x, int y, int stock_ind) {
     gl_draw_line(x_pix, y_pix, x_pix + (N_TIME_DISPLAY * 2 + 1) * gl_get_char_width(), y_pix, GL_WHITE);
     
     // draw box plot
-    printf("OPEN_PRICE: %.2f\n", ticker.stocks[stock_ind].open_price[end_time]);
-    printf("CLOSE_PRICE: %.2f\n", ticker.stocks[stock_ind].close_price[end_time]);
-    printf("HIGH_PRICE: %.2f\n", ticker.stocks[stock_ind].high_price[end_time]); 
-    printf("LOW_PRICE: %.2f\n", ticker.stocks[stock_ind].low_price[end_time]);
-
     for (int i = 0; i <= end_time - start_time; i++) {
         float open_price = ticker.stocks[stock_ind].open_price[i + start_time];
         float close_price = ticker.stocks[stock_ind].close_price[i + start_time];
