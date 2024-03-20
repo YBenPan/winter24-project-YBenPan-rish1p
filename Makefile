@@ -3,10 +3,10 @@
 # Additional source file(s) mymodule.c (edit SOURCES to change)
 # Link against your libmango + reference libmango (edit LDLIBS, LDFLAGS to change)
 
-PROGRAM = myprogram.bin
-SOURCES = $(PROGRAM:.bin=.c) mymodule.c
+SERVER_PROGRAM = interface.bin
+SERVER_SOURCES = interface.c mathlib.c
 
-all: $(PROGRAM)
+all: $(SERVER_PROGRAM)
 
 # Flags for compile and link
 ARCH 	= -march=rv64im -mabi=lp64
@@ -15,7 +15,7 @@ CFLAGS 	= $(ARCH) -g -Og -I$$CS107E/include $$warn $$freestanding -fno-omit-fram
 LDFLAGS = -nostdlib -L$$CS107E/lib -T memmap.ld
 LDLIBS 	= -lmango -lmango_gcc
 
-OBJECTS = $(addsuffix .o, $(basename $(SOURCES)))
+OBJECTS = $(addsuffix .o, $(basename $(SERVER_SOURCES)))
 
 # Rules and recipes for all build steps
 
@@ -35,13 +35,16 @@ OBJECTS = $(addsuffix .o, $(basename $(SOURCES)))
 %.o: %.s
 	riscv64-unknown-elf-as $(ASFLAGS) $< -o $@
 
+server: $(SERVER_PROGRAM)
+	mango-run $<
+
 # Build and run the application binary
 run: $(PROGRAM)
 	mango-run $<
 
 # Remove all build products
 clean:
-	rm -f *.o *.bin *.elf *.list *~
+	rm -rf *.o *.bin *.elf *.list *~
 
 # this rule will provide better error message when
 # a source file cannot be found (missing, misnamed)
